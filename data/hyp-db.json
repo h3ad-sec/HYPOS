@@ -25,9 +25,9 @@
           "tools": ["Mimikatz", "NanoDump", "Cobalt Strike", "Windows Credential Editor", "Outflank-C2"],
           "actors": ["APT28", "APT29", "Volt Typhoon", "Carbanak", "LockBit"],
           "refs": [
-            { "label": "Sigma: proc_access_win_lsass_memdump", "type": "sigma" },
-            { "label": "CISA AA24-038A — PRC TTPs", "type": "advisory" },
-            { "label": "Red Canary TDR 2025", "type": "report" }
+            { "label": "Sigma: proc_access_win_lsass_memdump", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml" },
+            { "label": "CISA AA24-038A — PRC TTPs", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" },
+            { "label": "Red Canary TDR 2025", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
           ],
           "fpr": "AV/EDR products, WerFault.exe, Sysmon itself, and tools such as Process Explorer all legitimately access LSASS. Exclude by signed binary + known install path. Alert only when SourceImage is not in an org-maintained allowlist."
         },
@@ -39,7 +39,7 @@
           "pivots": [
             {
               "label": "Sysmon EID 1",
-              "detail": "Image = rundll32.exe AND CommandLine contains (comsvcs.dll OR comsvcs) AND CommandLine contains (MiniDump OR #24 OR #65560 OR full). Variations include ordinal-only references and path obfuscation."
+              "detail": "Image = rundll32.exe AND CommandLine contains (comsvcs.dll OR comsvcs) AND CommandLine contains (MiniDump OR #24 OR #65560 OR full)"
             },
             {
               "label": "Sysmon EID 10",
@@ -53,9 +53,9 @@
           "tools": ["comsvcs.dll (LOLBIN)", "rundll32.exe", "PowerShell"],
           "actors": ["Volt Typhoon", "APT28", "PYSA", "Akira"],
           "refs": [
-            { "label": "CISA AA24-038A — Volt Typhoon", "type": "advisory" },
-            { "label": "Sigma: proc_creation_win_rundll32_comsvcs_minidump", "type": "sigma" },
-            { "label": "LOLBAS: comsvcs.dll", "type": "lolbas" }
+            { "label": "CISA AA24-038A — Volt Typhoon", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" },
+            { "label": "Sigma: proc_creation_win_rundll32_comsvcs_minidump", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_comsvcs_minidump.yml" },
+            { "label": "LOLBAS: comsvcs.dll", "type": "lolbas", "url": "https://lolbas-project.github.io/lolbas/Libraries/Comsvcs/" }
           ],
           "fpr": "No legitimate administrative use case invokes comsvcs.dll MiniDump against lsass.exe. This detection has near-zero FPR. Confirm by checking for output .dmp file creation within seconds of the rundll32 event."
         },
@@ -63,11 +63,11 @@
           "id": "HYP-T1003.001-003",
           "title": "SysInternals ProcDump Targeting LSASS",
           "severity": "high",
-          "statement": "A threat actor on Windows is suspected of using Microsoft SysInternals ProcDump to create a full or mini memory dump of lsass.exe for offline credential extraction. Hunt for procdump.exe or procdump64.exe with memory-dump flags targeting lsass by name or PID, especially when launched from command interpreters, remote execution utilities, or network share paths.",
+          "statement": "A threat actor on Windows is suspected of using the legitimate SysInternals ProcDump utility to write a full LSASS memory dump to disk for offline credential extraction. Hunt for procdump.exe or procdump64.exe process creation with command-line arguments naming lsass by name or PID, especially when executed from non-standard paths or by unusual parent processes.",
           "pivots": [
             {
               "label": "Sysmon EID 1",
-              "detail": "Image = (procdump.exe OR procdump64.exe) AND CommandLine contains (-ma OR -mm OR -mp) AND CommandLine contains (lsass OR keyiso OR samss)"
+              "detail": "Image endswith (procdump.exe OR procdump64.exe) AND (CommandLine contains '-ma lsass' OR CommandLine contains '-mm lsass' OR CommandLine contains lsass.exe)"
             },
             {
               "label": "Parent process",
@@ -81,9 +81,9 @@
           "tools": ["ProcDump", "ProcDump64"],
           "actors": ["LockBit 3.0", "BlackCat/ALPHV", "FIN6", "FIN7"],
           "refs": [
-            { "label": "CISA AA23-075A — LockBit 3.0", "type": "advisory" },
-            { "label": "Sigma: proc_creation_win_sysinternals_procdump_lsass", "type": "sigma" },
-            { "label": "DFIR Report — Cobalt Strike + ProcDump", "type": "report" }
+            { "label": "CISA AA23-075A — LockBit 3.0", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" },
+            { "label": "Sigma: proc_creation_win_sysinternals_procdump_lsass", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sysinternals_procdump_lsass.yml" },
+            { "label": "DFIR Report — Cobalt Strike + ProcDump", "type": "report", "url": "https://thedfirreport.com/" }
           ],
           "fpr": "ProcDump is a legitimate SysInternals tool used by developers and Microsoft support. Allowlist execution from C:\\Program Files when the target is not lsass and the parent is a recognized IDE or support session. Alert on: lsass target, unusual parent, staging path, off-hours."
         },
@@ -91,11 +91,11 @@
           "id": "HYP-T1003.001-004",
           "title": "LSASS Dump File Creation in Staging Path",
           "severity": "high",
-          "statement": "A threat actor on Windows is suspected of staging an LSASS memory dump for later offline credential extraction. Hunt for .dmp files containing 'lsass' in the filename created outside of Windows Error Reporting paths by processes without a legitimate diagnostic purpose, including manual Task Manager dumps.",
+          "statement": "A threat actor on Windows is suspected of having successfully dumped LSASS memory to a file in a staging path for subsequent exfiltration. Hunt for .dmp or custom-extension files created in world-writable or temp directories by any process with prior LSASS handle activity, or by Task Manager (low-tech operator dump technique).",
           "pivots": [
             {
               "label": "Sysmon EID 11",
-              "detail": "TargetFilename endswith .dmp AND (TargetFilename contains lsass OR filename matches known dump names: Andrew.dmp, Coredump.dmp) AND Image NOT IN (WerFault.exe, WerFaultSecure.exe)"
+              "detail": "TargetFilename endswith .dmp AND (TargetFilename contains lsass OR Image endswith taskmgr.exe OR Image endswith procdump.exe OR Image endswith rundll32.exe) AND TargetFilename matches (%TEMP%\\* OR C:\\Windows\\Temp\\* OR C:\\ProgramData\\* OR %APPDATA%\\*)"
             },
             {
               "label": "File size heuristic",
@@ -109,9 +109,9 @@
           "tools": ["Task Manager (LOLBIN)", "ProcDump", "comsvcs.dll", "Mimikatz sekurlsa::minidump"],
           "actors": ["PYSA/Mespinoza", "Akira", "Conti"],
           "refs": [
-            { "label": "DFIR Report — PYSA Task Manager dumps", "type": "report" },
-            { "label": "Sigma: win_lsass_dump_file_creation", "type": "sigma" },
-            { "label": "CISA AA23-075A", "type": "advisory" }
+            { "label": "DFIR Report — PYSA Task Manager dumps", "type": "report", "url": "https://thedfirreport.com/" },
+            { "label": "Sigma: file_event_win_lsass_dump_file_creation", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/file/file_event/file_event_win_lsass_dump_file_creation.yml" },
+            { "label": "CISA AA23-075A", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" }
           ],
           "fpr": "WerFault.exe and WerFaultSecure.exe legitimately create LSASS-related crash dumps — exclude those processes. Developer crash dump sessions may produce .dmp files in custom paths; correlate with active debugging sessions and approved tooling."
         }
@@ -121,17 +121,13 @@
       "hypotheses": [
         {
           "id": "HYP-T1059.001-001",
-          "title": "Encoded PowerShell with Execution-Evasion Flags",
+          "title": "Encoded PowerShell with Execution-Policy Bypass Flags",
           "severity": "high",
-          "statement": "A threat actor with execution on Windows is suspected of using Base64-encoded PowerShell commands combined with execution-evasion flags to run malicious payloads while bypassing logging and policy controls. Hunt for powershell.exe combining -EncodedCommand with -NoProfile and -WindowStyle Hidden, especially from non-standard parent processes or with encoded strings exceeding 1,000 characters.",
+          "statement": "A threat actor on Windows is suspected of using encoded PowerShell commands combined with execution-policy bypass flags to conceal payload content from casual inspection and evade script-block logging on unpatched hosts. Hunt for powershell.exe spawned with -enc or -EncodedCommand alongside -NoP, -NonI, -W Hidden, or -Exec Bypass.",
           "pivots": [
             {
-              "label": "Sysmon EID 1 / Sec EID 4688",
-              "detail": "Image = powershell.exe AND CommandLine contains (-enc OR -EncodedCommand) AND CommandLine contains (-nop OR -NonInteractive OR -w hidden OR -WindowStyle). Flag combinations matter: -enc alone is common, but -enc + -nop + -w hidden together is high-confidence malicious."
-            },
-            {
-              "label": "Parent process",
-              "detail": "High-risk parents: winword.exe, excel.exe, outlook.exe (macro delivery), wscript.exe, cscript.exe, mshta.exe (script-based), chrome.exe or msedge.exe (drive-by staging). Encoded PS from these parents warrants immediate triage."
+              "label": "Sysmon EID 1",
+              "detail": "Image endswith powershell.exe AND CommandLine contains (-enc OR -EncodedCommand) AND CommandLine contains (-nop OR -NonInteractive OR hidden OR bypass)"
             },
             {
               "label": "Decode and inspect",
@@ -145,9 +141,9 @@
           "tools": ["Empire", "Cobalt Strike Beacon", "Metasploit", "Nishang", "PowerShell stagers"],
           "actors": ["APT28", "APT29", "APT33", "APT41", "Emotet", "IcedID", "LockBit"],
           "refs": [
-            { "label": "Sigma: proc_creation_win_powershell_encoded_cmd", "type": "sigma" },
-            { "label": "Red Canary TDR 2025 — PowerShell #2 technique", "type": "report" },
-            { "label": "Elastic: defense_evasion_encoded_powershell", "type": "elastic" }
+            { "label": "Sigma: proc_creation_win_powershell_encoded_cmd", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_encoded_cmd.yml" },
+            { "label": "Red Canary TDR 2025 — PowerShell #2 technique", "type": "report", "url": "https://redcanary.com/threat-detection-report/" },
+            { "label": "Elastic: defense_evasion_encoded_powershell", "type": "elastic", "url": "https://github.com/elastic/detection-rules/search?q=encoded+powershell" }
           ],
           "fpr": "SCCM, Intune, and GPO delivery scripts often use encoding for safe transport. Allowlist by: signed binary, scheduled task context, execution from C:\\Windows\\System32 or C:\\Program Files, known admin workstation. Baseline encoded PS frequency per host — spikes indicate anomalous activity."
         },
@@ -155,15 +151,15 @@
           "id": "HYP-T1059.001-002",
           "title": "In-Memory Download Cradle (Fileless Execution)",
           "severity": "critical",
-          "statement": "A threat actor with a foothold on Windows is suspected of downloading and immediately executing a remote payload in memory via PowerShell's .NET HTTP client, leaving no disk artifacts and bypassing file-based AV. Hunt for ScriptBlock events (EID 4104) containing DownloadString or Invoke-WebRequest immediately followed by Invoke-Expression (IEX), combined with outbound HTTP(S) from powershell.exe to uncategorized or newly registered domains.",
+          "statement": "A threat actor on Windows is suspected of using a PowerShell download cradle — Net.WebClient.DownloadString or Invoke-WebRequest piped into IEX — to fetch and execute a remote payload entirely in memory, leaving no file on disk. Hunt for ScriptBlock log events containing both a web-client download method and an invocation expression within the same or consecutive events.",
           "pivots": [
             {
-              "label": "PS EID 4104",
-              "detail": "ScriptBlockText contains (DownloadString OR DownloadData OR Invoke-WebRequest OR iwr) AND ScriptBlockText contains (IEX OR Invoke-Expression OR [ScriptBlock]::Create). Net.WebClient is a stable anchor regardless of surrounding obfuscation."
+              "label": "PS EID 4104 — primary",
+              "detail": "ScriptBlockText contains (DownloadString OR DownloadData OR WebClient) AND ScriptBlockText contains (IEX OR Invoke-Expression OR &([scriptblock]::Create))"
             },
             {
-              "label": "Sysmon EID 3",
-              "detail": "powershell.exe initiating outbound HTTP/HTTPS within seconds of process creation to a non-Microsoft, non-CDN endpoint — especially residential IPs, dynamic DNS hostnames, or domains registered <30 days ago."
+              "label": "Network correlation",
+              "detail": "Correlate EID 4104 match with Sysmon EID 3 (Network) from powershell.exe to the same destination within ±5 seconds. Non-browser PS network connections to external IPs or newly-registered domains warrant automatic escalation."
             },
             {
               "label": "User-Agent baseline",
@@ -177,9 +173,9 @@
           "tools": ["Cobalt Strike", "Empire", "Metasploit web_delivery", "PowerShell stagers", "Emotet loaders"],
           "actors": ["APT29", "APT41", "Emotet", "QBot", "IcedID", "Black Basta"],
           "refs": [
-            { "label": "Sigma: posh_ps_web_request", "type": "sigma" },
-            { "label": "DFIR Report — Cobalt Strike staging chains", "type": "report" },
-            { "label": "Elastic: execution_via_powershell_download_cradle", "type": "elastic" }
+            { "label": "Sigma: posh_ps_web_request", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_web_request.yml" },
+            { "label": "DFIR Report — Cobalt Strike staging chains", "type": "report", "url": "https://thedfirreport.com/" },
+            { "label": "Elastic: execution via PowerShell download cradle", "type": "elastic", "url": "https://github.com/elastic/detection-rules/search?q=powershell+download+cradle" }
           ],
           "fpr": "Legitimate admin scripts use Invoke-WebRequest to pull resources from known CDNs, GitHub, or internal update servers. Allowlist by destination domain: Microsoft, GitHub, corporate update infrastructure. Alert on unknown or new destination domains regardless of protocol."
         },
@@ -187,11 +183,11 @@
           "id": "HYP-T1059.001-003",
           "title": "AMSI Bypass via PowerShell Reflection",
           "severity": "high",
-          "statement": "A threat actor on Windows is suspected of disabling the Antimalware Scan Interface (AMSI) through PowerShell reflection to prevent script-level scanning of a subsequent malicious payload. Hunt for ScriptBlock events manipulating the AmsiUtils class, setting amsiInitFailed, or using SetValue against System.Management.Automation internals — including obfuscated variants using character arrays or string replacement to reconstruct the class name.",
+          "statement": "A threat actor on Windows is suspected of patching the AMSI scan interface in memory using .NET reflection to disable antimalware scanning before executing a concealed payload. Hunt for ScriptBlock log events containing AmsiUtils, amsiInitFailed, or reflection-based SetValue calls targeting System.Management.Automation assemblies.",
           "pivots": [
             {
-              "label": "PS EID 4104 — Direct",
-              "detail": "ScriptBlockText contains (System.Management.Automation.AmsiUtils OR amsiInitFailed OR amsiContext OR amsiSession) AND ScriptBlockText contains (SetValue OR GetField OR ForceSet)"
+              "label": "PS EID 4104 — direct",
+              "detail": "ScriptBlockText contains (AmsiUtils OR amsiInitFailed) OR (ScriptBlockText contains System.Management.Automation AND ScriptBlockText contains SetValue AND ScriptBlockText contains amsi)"
             },
             {
               "label": "PS EID 4104 — Obfuscated",
@@ -205,9 +201,9 @@
           "tools": ["Invisi-Shell", "AMSI.fail payloads", "Cobalt Strike", "Empire", "custom loaders"],
           "actors": ["APT29", "Turla", "FIN7", "ransomware pre-loaders"],
           "refs": [
-            { "label": "Sigma: posh_ps_amsi_bypass", "type": "sigma" },
-            { "label": "Elastic: defense_evasion_amsi_bypass_powershell", "type": "elastic" },
-            { "label": "AMSI.fail bypass reference", "type": "blog" }
+            { "label": "Sigma: posh_ps_amsi_bypass", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_amsi_bypass.yml" },
+            { "label": "Elastic: defense_evasion_amsi_bypass_powershell", "type": "elastic", "url": "https://github.com/elastic/detection-rules/search?q=amsi+bypass+powershell" },
+            { "label": "AMSI.fail bypass reference", "type": "blog", "url": "https://amsi.fail/" }
           ],
           "fpr": "Authorized security testing frameworks and some EDR products may interact with AMSI internals. In production environments outside approved red team windows, legitimate AMSI bypass activity is essentially zero — alert on any occurrence and investigate promptly."
         },
@@ -215,15 +211,15 @@
           "id": "HYP-T1059.001-004",
           "title": "Offensive Framework Cmdlets via ScriptBlock Logging",
           "severity": "critical",
-          "statement": "A threat actor on Windows is suspected of executing known offensive PowerShell framework cmdlets for credential access, lateral movement, discovery, or persistence. Hunt via PowerShell ScriptBlock logging (EID 4104) for cmdlets from PowerView, Mimikatz, Empire, BloodHound, or Nishang — these strings have near-zero FPR in production environments outside authorized red team exercises.",
+          "statement": "A threat actor on Windows is suspected of executing PowerShell-based offensive framework modules — from PowerSploit, PowerView, Empire, or Mimikatz — captured in ScriptBlock logs. Hunt for EID 4104 events containing known offensive cmdlet names across credential dumping, lateral movement, AD enumeration, and defense evasion categories.",
           "pivots": [
             {
-              "label": "Credential access",
-              "detail": "ScriptBlockText contains (Invoke-Mimikatz OR Get-PassHashes OR Invoke-DCSync OR Get-LSASecret OR Get-VaultCredential OR Invoke-CredentialInjection)"
+              "label": "Credential dumping",
+              "detail": "ScriptBlockText contains (Invoke-Mimikatz OR Invoke-NinjaCopy OR Get-GPPPassword OR Invoke-Kerberoast OR Invoke-DCSync OR Get-Credential OR Out-Minidump)"
             },
             {
               "label": "Lateral movement",
-              "detail": "ScriptBlockText contains (Invoke-PsExec OR Invoke-WmiCommand OR Invoke-SMBExec OR Invoke-Shellcode OR New-PSSession) with -ComputerName targeting internal hosts"
+              "detail": "ScriptBlockText contains (Invoke-PsExec OR Invoke-WMICommand OR Invoke-SMBExec OR Invoke-TheHash OR New-PSDrive.*IPC OR Enter-PSSession)"
             },
             {
               "label": "Discovery & enumeration",
@@ -237,9 +233,9 @@
           "tools": ["PowerView", "Mimikatz (PS)", "Empire", "Nishang", "BloodHound", "PowerSploit"],
           "actors": ["APT28", "APT29", "APT33", "Akira", "LockBit", "Black Basta"],
           "refs": [
-            { "label": "Sigma: posh_ps_malicious_commandlets", "type": "sigma" },
-            { "label": "CISA AA25-141A — Akira PS credential dumping", "type": "advisory" },
-            { "label": "Red Canary TDR 2025", "type": "report" }
+            { "label": "Sigma: posh_ps_malicious_commandlets", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_malicious_commandlets.yml" },
+            { "label": "CISA AA25-141A — Akira PS credential dumping", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" },
+            { "label": "Red Canary TDR 2025", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
           ],
           "fpr": "PowerShell ScriptBlock logging (EID 4104) must be enabled via GPO — without it these events do not exist. The listed cmdlets are exclusively offensive with no legitimate administrative use. FPR is near-zero; any match warrants immediate investigation."
         }

@@ -181,7 +181,7 @@ function renderCard(h) {
 
   const dsList = h.dataSources.length
     ? h.dataSources.slice(0, 8).map(ds => `<li>${escapeHtml(ds)}</li>`).join('')
-    : '<li style="color:var(--muted)">No data sources listed</li>';
+    : '';
 
   const platformChips = h.platforms.length
     ? h.platforms.map(p => `<span class="hyp-platform-chip">${escapeHtml(p)}</span>`).join('')
@@ -201,10 +201,7 @@ function renderCard(h) {
         <div class="hyp-hypothesis-text">${escapeHtml(h.hypothesis)}</div>
       </div>
       <div class="hyp-meta-grid">
-        <div>
-          <div class="hyp-section-lbl">DATA SOURCES</div>
-          <ul class="hyp-ds-list">${dsList}</ul>
-        </div>
+        ${dsList ? `<div><div class="hyp-section-lbl">DATA SOURCES</div><ul class="hyp-ds-list">${dsList}</ul></div>` : ''}
         <div>
           <div class="hyp-section-lbl">PLATFORMS</div>
           <div class="hyp-platform-chips">${platformChips}</div>
@@ -248,7 +245,7 @@ function renderCuratedCard(h, curated) {
 
   const dsList = h.dataSources.length
     ? h.dataSources.slice(0, 8).map(ds => `<li>${escapeHtml(ds)}</li>`).join('')
-    : '<li style="color:var(--muted)">No data sources listed</li>';
+    : '';
 
   const platformChips = h.platforms.length
     ? h.platforms.map(p => `<span class="hyp-platform-chip">${escapeHtml(p)}</span>`).join('')
@@ -260,7 +257,9 @@ function renderCuratedCard(h, curated) {
     `<span class="hyp-actor-chip" onclick="window.__hypSearch('${escapeAttr(a)}')">${escapeHtml(a)}</span>`).join('');
 
   const refItems = allRefs.map(r =>
-    `<span class="hyp-ref-item"><span class="hyp-ref-type">${escapeHtml(r.type)}</span>${escapeHtml(r.label)}</span>`
+    r.url
+      ? `<a class="hyp-ref-item" href="${escapeAttr(r.url)}" target="_blank" rel="noopener"><span class="hyp-ref-type">${escapeHtml(r.type)}</span>${escapeHtml(r.label)}</a>`
+      : `<span class="hyp-ref-item"><span class="hyp-ref-type">${escapeHtml(r.type)}</span>${escapeHtml(r.label)}</span>`
   ).join('');
 
   const footer = buildFooter(h);
@@ -275,10 +274,7 @@ function renderCuratedCard(h, curated) {
     <div class="hyp-card-body">
       <div class="hyp-curated-hyps">${hypSections}</div>
       <div class="hyp-meta-grid">
-        <div>
-          <div class="hyp-section-lbl">DATA SOURCES</div>
-          <ul class="hyp-ds-list">${dsList}</ul>
-        </div>
+        ${dsList ? `<div><div class="hyp-section-lbl">DATA SOURCES</div><ul class="hyp-ds-list">${dsList}</ul></div>` : ''}
         <div>
           <div class="hyp-section-lbl">PLATFORMS</div>
           <div class="hyp-platform-chips">${platformChips}</div>

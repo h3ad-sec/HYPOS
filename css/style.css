@@ -319,9 +319,8 @@ body.light .toggle-thumb { transform: translateX(16px); background: #fff; }
 
 /* ── Search section ────────────────────────────────────────── */
 .hyp-search-wrap {
-  max-width: 1400px;
   margin: 0 auto 40px;
-  padding: 0 32px;
+  padding: 0 40px;
 }
 
 .hyp-search-box {
@@ -438,9 +437,8 @@ body.light .hyp-search-btn { color: #fff; }
 
 /* ── Loading terminal ──────────────────────────────────────── */
 .hyp-loading {
-  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 40px;
 }
 
 .hyp-terminal {
@@ -477,9 +475,8 @@ body.light .hyp-search-btn { color: #fff; }
 
 /* ── Empty / welcome state ─────────────────────────────────── */
 .hyp-empty {
-  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 40px;
   text-align: center;
 }
 
@@ -514,9 +511,8 @@ body.light .hyp-search-btn { color: #fff; }
 
 /* ── Error state ───────────────────────────────────────────── */
 .hyp-error {
-  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 40px;
 }
 .hyp-error-box {
   background: var(--panel);
@@ -531,9 +527,8 @@ body.light .hyp-search-btn { color: #fff; }
 
 /* ── Results ───────────────────────────────────────────────── */
 .hyp-results {
-  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 40px;
 }
 
 
@@ -1012,6 +1007,12 @@ body.light .hyp-search-btn { color: #fff; }
   display: flex;
   align-items: center;
   gap: 5px;
+  text-decoration: none;
+  transition: color .15s;
+}
+
+a.hyp-ref-item:hover {
+  color: var(--accent);
 }
 
 .hyp-ref-type {
