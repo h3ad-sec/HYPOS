@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HYPOS - Every TTP. One Hypothesis.</title>
+  <meta name="description" content="HYPOS by H3AD-SEC — Hypothesis-driven threat hunting platform. Input MITRE technique IDs, groups, malware, tools, or campaigns. Get structured hunt hypotheses backed by ATT&CK STIX data.">
+  <link rel="icon" href="https://h3ad-sec.github.io/fevicon.png?v=2026" type="image/png">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="dark">
+  <canvas id="matrix"></canvas>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="hamburger" id="hamburger" onclick="toggleDrawer()">
+      <span></span><span></span><span></span>
+    </div>
+    <a class="nav-brand" href="https://h3ad-sec.github.io" target="_blank" rel="noopener">
+      <img id="navLogo" src="https://raw.githubusercontent.com/h3ad-sec/h3ad-sec.github.io/main/logo-dark.png" alt="H3AD-SEC" style="height:22px;vertical-align:middle;">
+    </a>
+    <div class="nav-links">
+      <div class="nav-divider"></div>
+      <a href="https://h3ad-sec.github.io" target="_blank" rel="noopener">HOME</a>
+      <div class="nav-divider"></div>
+      <div class="nav-item">
+        <a href="https://h3ad-sec.github.io/H3AD-X/" target="_blank" rel="noopener">H3AD-X</a>
+        <div class="nav-dropdown">
+          <div class="nav-dropdown-inner">
+            <a href="https://h3ad-sec.github.io/VERDIKT/" target="_blank" rel="noopener">VERDIKT</a>
+          </div>
+        </div>
+      </div>
+      <a href="https://h3ad-sec.github.io/H3AD-AI/" target="_blank" rel="noopener">H3AD-AI</a>
+      <a href="https://h3ad-sec.github.io/H3AD-DETECT/" target="_blank" rel="noopener">H3AD-DETECT</a>
+      <div class="nav-item">
+        <a href="https://h3ad-sec.github.io/H3AD-HUNT/" target="_blank" rel="noopener">H3AD-HUNT</a>
+        <div class="nav-dropdown">
+          <div class="nav-dropdown-inner">
+            <a href="https://h3ad-sec.github.io/HYPOS/" target="_blank" rel="noopener" class="nav-current">HYPOS</a>
+          </div>
+        </div>
+      </div>
+      <a href="https://h3ad-sec.github.io/H3AD-OPS/" target="_blank" rel="noopener">H3AD-OPS</a>
+      <a href="https://h3ad-sec.github.io/H3AD-DF/" target="_blank" rel="noopener">H3AD-DF</a>
+      <a href="https://h3ad-sec.github.io/H3AD-IR/" target="_blank" rel="noopener">H3AD-IR</a>
+      <div class="nav-divider"></div>
+      <a href="mailto:h3adsec@gmail.com">CONTACT</a>
+    </div>
+    <div class="nav-right">
+      <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+        <div class="toggle-track">
+          <div class="toggle-thumb"></div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Mobile drawer -->
+  <div class="nav-drawer" id="navDrawer">
+    <a href="https://h3ad-sec.github.io" target="_blank" rel="noopener" onclick="closeDrawer()">HOME ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-X/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-X ↗</a>
+    <a href="https://h3ad-sec.github.io/VERDIKT/" target="_blank" rel="noopener" onclick="closeDrawer()" class="drawer-sub">↳ VERDIKT ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-AI/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-AI ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-DETECT/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-DETECT ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-HUNT/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-HUNT ↗</a>
+    <a href="https://h3ad-sec.github.io/HYPOS/" target="_blank" rel="noopener" onclick="closeDrawer()" class="drawer-sub nav-current">↳ HYPOS ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-OPS/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-OPS ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-DF/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-DF ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-IR/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-IR ↗</a>
+    <a href="mailto:h3adsec@gmail.com" onclick="closeDrawer()">CONTACT</a>
+  </div>
+
+  <!-- Hero strip -->
+  <div class="hyp-hero">
+    <div class="hero-left">
+      <div class="hero-breadcrumb">
+        <a href="https://h3ad-sec.github.io" target="_blank" rel="noopener">H3AD-SEC</a>
+        <span>›</span>
+        <a href="https://h3ad-sec.github.io/H3AD-HUNT/" target="_blank" rel="noopener">H3AD-HUNT</a>
+        <span>›</span>
+        <span class="hero-current">HYPOS</span>
+      </div>
+      <div class="hero-title">
+        <span class="hero-hy">HY</span><span class="hero-pos">POS</span>
+      </div>
+      <div class="hero-tagline">Every TTP. One Hypothesis.</div>
+    </div>
+    <div class="hero-right">
+      <div class="data-status loading" id="dataStatus">
+        <span class="dot"></span>Initializing…
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <main class="hyp-main">
+
+    <!-- Search -->
+    <div class="hyp-search-wrap">
+      <form id="hyp-form" autocomplete="off">
+        <div class="hyp-search-box" id="hyp-search-box">
+          <input
+            id="hyp-input"
+            class="hyp-search-input"
+            type="text"
+            placeholder="T1003 · APT28 · Mimikatz · PowerShell Empire…"
+            spellcheck="false"
+            aria-label="Search technique, group, malware, tool, or campaign"
+          >
+          <button type="submit" class="hyp-search-btn">HUNT</button>
+          <div class="hyp-ac" id="hyp-ac"></div>
+        </div>
+      </form>
+      <div class="hyp-search-meta">
+        <div class="hyp-detect-badge" id="hyp-detect"></div>
+        <div class="hyp-type-pills">
+          <span class="hyp-type-pill">TECHNIQUE</span>
+          <span class="hyp-type-pill">GROUP</span>
+          <span class="hyp-type-pill">MALWARE</span>
+          <span class="hyp-type-pill">TOOL</span>
+          <span class="hyp-type-pill">CAMPAIGN</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- State: loading / empty / results / error -->
+    <div id="hyp-state"></div>
+
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+
+</html>

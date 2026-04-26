@@ -1,0 +1,205 @@
+import { loadData, clearCache } from './data-loader.js';
+import { lookup, suggest, detectQueryType } from './lookup.js';
+import {
+  setDataStatus, showLoading, appendTerminalLine, finalizeTerminal,
+  showEmpty, showError, renderResults, renderSuggestions, hideAutocomplete,
+  moveAcSelection, updateDetectBadge,
+} from './ui.js';
+
+// Expose for inline onclick handlers in rendered cards
+window.__hyposLookup = { detectQueryType };
+window.__hypSearch   = (q) => { runSearch(q); };
+
+let _dataReady = false;
+let _pendingQuery = null;
+
+// ── Init ────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  initMatrix();
+  initNav();
+  initSearch();
+  loadATTACK();
+});
+
+async function loadATTACK() {
+  showLoading(['Initializing HYPOS…']);
+  setDataStatus('loading', 'Loading ATT&CK…');
+
+  try {
+    await loadData((state, msg) => {
+      if (state === 'loading') {
+        appendTerminalLine(msg);
+      } else {
+        finalizeTerminal(msg);
+        setDataStatus('ready', msg);
+        _dataReady = true;
+        if (_pendingQuery) {
+          runSearch(_pendingQuery);
+          _pendingQuery = null;
+        } else {
+          showEmpty();
+        }
+      }
+    });
+  } catch (err) {
+    const msg = err.message || 'Failed to load ATT&CK data';
+    setDataStatus('error', 'Load failed');
+    showError(`${msg}. Check your internet connection or try refreshing.`);
+  }
+}
+
+// ── Search ─────────────────────────────────────────────────────
+
+function initSearch() {
+  const form  = document.getElementById('hyp-form');
+  const input = document.getElementById('hyp-input');
+  const ac    = document.getElementById('hyp-ac');
+
+  if (!form || !input) return;
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    hideAutocomplete();
+    if (!_dataReady) { _pendingQuery = q; return; }
+    runSearch(q);
+  });
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    updateDetectBadge(q);
+    if (!_dataReady || q.length < 2) { hideAutocomplete(); return; }
+    const suggestions = suggest(q);
+    renderSuggestions(suggestions);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const val = moveAcSelection(1);
+      if (val) input.value = val;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const val = moveAcSelection(-1);
+      if (val) input.value = val;
+    } else if (e.key === 'Escape') {
+      hideAutocomplete();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#hyp-search-box')) hideAutocomplete();
+  });
+
+  ac?.addEventListener('click', e => {
+    const item = e.target.closest('.hyp-ac-item');
+    if (!item) return;
+    input.value = item.dataset.val;
+    hideAutocomplete();
+    form.dispatchEvent(new Event('submit'));
+  });
+
+  // URL query param support: ?q=T1003
+  const params = new URLSearchParams(window.location.search);
+  const qParam = params.get('q');
+  if (qParam) {
+    input.value = qParam;
+    if (_dataReady) runSearch(qParam);
+    else _pendingQuery = qParam;
+  }
+}
+
+function runSearch(query) {
+  const q = query.trim();
+  if (!q) return;
+  // Update URL without navigation
+  const url = new URL(window.location);
+  url.searchParams.set('q', q);
+  window.history.replaceState(null, '', url);
+
+  const result = lookup(q);
+  renderResults(result);
+  window.scrollTo({ top: document.getElementById('hyp-state')?.offsetTop - 160, behavior: 'smooth' });
+}
+
+// ── Theme ──────────────────────────────────────────────────────
+
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  applyTheme(saved);
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle('light', theme === 'light');
+  document.body.classList.toggle('dark',  theme !== 'light');
+  const logo = document.getElementById('navLogo');
+  if (logo) logo.src = theme === 'light'
+    ? 'https://raw.githubusercontent.com/h3ad-sec/h3ad-sec.github.io/main/logo-light.png'
+    : 'https://raw.githubusercontent.com/h3ad-sec/h3ad-sec.github.io/main/logo-dark.png';
+  const matrix = document.getElementById('matrix');
+  if (matrix) matrix.dataset.theme = theme;
+  if (typeof window.__matrixSetColor === 'function') {
+    window.__matrixSetColor(theme === 'light' ? '#0077ff' : '#00ff9f');
+  }
+}
+
+window.toggleTheme = function () {
+  const isLight = document.body.classList.contains('light');
+  const next = isLight ? 'dark' : 'light';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+};
+
+// ── Nav drawer ─────────────────────────────────────────────────
+
+function initNav() {
+  window.toggleDrawer = () => {
+    document.getElementById('navDrawer')?.classList.toggle('open');
+  };
+  window.closeDrawer = () => {
+    document.getElementById('navDrawer')?.classList.remove('open');
+  };
+}
+
+// ── Matrix ─────────────────────────────────────────────────────
+
+function initMatrix() {
+  const canvas = document.getElementById('matrix');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789T1003T1059T1078INITIALACCESS EXECUTION PERSISTENCE PRIVILEGEESCALATION DEFENSEEVASION CREDENTIALACCESS DISCOVERY LATERALMOVEMENT COLLECTION C2 EXFILTRATION IMPACT HYPOTHESIS HUNT MITRE ATT&CK TTP STIX SIGMA KQL SPL'.split('');
+
+  let color = '#00ff9f';
+  let cols, drops;
+
+  function resize() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    cols  = Math.floor(canvas.width / 16);
+    drops = Array(cols).fill(1);
+  }
+
+  function draw() {
+    ctx.fillStyle = document.body.classList.contains('light')
+      ? 'rgba(245,247,251,0.05)'
+      : 'rgba(6,8,15,0.05)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = document.body.classList.contains('light') ? '#0077ff' : '#00ff9f';
+    ctx.font = '14px Share Tech Mono';
+    for (let i = 0; i < drops.length; i++) {
+      const c = CHARS[Math.floor(Math.random() * CHARS.length)];
+      ctx.fillText(c, i * 16, drops[i] * 16);
+      if (drops[i] * 16 > canvas.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+  }
+
+  window.__matrixSetColor = c => { color = c; };
+  resize();
+  window.addEventListener('resize', resize);
+  setInterval(draw, 50);
+}
