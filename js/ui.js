@@ -147,32 +147,50 @@ function renderActorResults(result, hypotheses, total) {
 }
 
 function renderAllResults(hypotheses, total) {
-  const groups  = groupByTactic(hypotheses);
-  const tactics = groups.length;
+  const groups = groupByTactic(hypotheses);
+  const curatedCount = hypotheses.filter(h => !!getCurated(h.id)).length;
 
-  let html = `<div class="hyp-results">`;
-  html += `<div class="hyp-summary">
-    <div class="hyp-summary-left">
-      <strong>${hypotheses.length}</strong> technique${hypotheses.length !== 1 ? 's' : ''} &nbsp;·&nbsp; ${tactics} tactic${tactics !== 1 ? 's' : ''} &nbsp;·&nbsp; full ATT&amp;CK matrix
+  let html = `<div class="hyp-matrix-wrap">`;
+
+  html += `<div class="hyp-matrix-bar">
+    <div class="hyp-matrix-stats">
+      <strong>${hypotheses.length}</strong> techniques
+      <span class="hyp-matrix-sep">·</span>
+      <strong>${groups.length}</strong> tactics
+      <span class="hyp-matrix-sep">·</span>
+      <strong style="color:var(--accent)">${curatedCount}</strong> curated
     </div>
-    <div class="hyp-summary-right" style="font-size:var(--fs-xs);color:var(--muted)">click a tactic to expand</div>
+    <div class="hyp-matrix-legend">
+      <span class="hyp-matrix-legend-item"><span class="hyp-matrix-legend-dot curated"></span>Curated hypothesis</span>
+      <span class="hyp-matrix-legend-item">Click any technique to view hypotheses</span>
+    </div>
   </div>`;
+
+  html += `<div class="hyp-matrix-scroll"><div class="hyp-matrix-grid">`;
 
   for (const { tactic, items } of groups) {
     const meta = TACTIC_META[tactic] || { label: tactic, color: '#7d8fb3' };
-    html += `<div class="hyp-tactic-group collapsed">`;
-    html += `<div class="hyp-tactic-header" onclick="this.closest('.hyp-tactic-group').classList.toggle('collapsed')">
-      <div class="hyp-tactic-rule"></div>
-      <span class="hyp-tactic-badge" style="background:${escapeAttr(meta.color)}">${escapeHtml(meta.label)}</span>
-      <span class="hyp-tactic-count">${items.length}</span>
-      <span class="hyp-tactic-toggle">▾</span>
+    html += `<div class="hyp-matrix-col">`;
+    html += `<div class="hyp-matrix-tactic-hdr" style="border-top:2px solid ${escapeAttr(meta.color)};background:${escapeAttr(meta.color)}18">
+      <span class="hyp-matrix-tactic-name">${escapeHtml(meta.label)}</span>
+      <span class="hyp-matrix-tactic-cnt">${items.length} techniques</span>
     </div>`;
-    html += `<div class="hyp-tactic-cards">`;
-    for (const h of items) html += renderCard(h);
-    html += `</div></div>`;
+    for (const h of items) {
+      const hasCurated = !!getCurated(h.id);
+      const subsCount  = h.subs.length;
+      html += `<div class="hyp-matrix-cell${hasCurated ? ' curated' : ''}" onclick="window.__hypSearch('${escapeAttr(h.id)}')">
+        <div class="hyp-matrix-cell-name">${escapeHtml(h.name)}</div>
+        <div class="hyp-matrix-cell-meta">
+          <span class="hyp-matrix-cell-id">${escapeHtml(h.id)}</span>
+          ${subsCount ? `<span class="hyp-matrix-cell-subs">+${subsCount}</span>` : ''}
+          ${hasCurated ? `<span class="hyp-matrix-cell-star">★</span>` : ''}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
   }
 
-  html += `</div>`;
+  html += `</div></div></div>`;
   $('hyp-state').innerHTML = html;
 }
 
