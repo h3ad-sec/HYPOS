@@ -244,7 +244,7 @@ function renderCuratedCard(h, curated) {
       ${pivotRows ? `<div class="hyp-section-lbl" style="margin-top:6px">HUNT PIVOTS</div><div class="hyp-pivot-list">${pivotRows}</div>` : ''}
       ${c.fpr ? `<div class="hyp-chyp-fpr"><span class="hyp-section-lbl" style="display:inline;margin-right:6px">FPR</span>${escapeHtml(c.fpr)}</div>` : ''}
     </div>`;
-  }).join('');
+  }).join('<hr class="hyp-chyp-divider">');
 
   const dsList = h.dataSources.length
     ? h.dataSources.slice(0, 8).map(ds => `<li>${escapeHtml(ds)}</li>`).join('')

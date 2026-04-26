@@ -950,6 +950,13 @@ body.light .hyp-search-btn { color: #fff; }
   border-top: 1px dashed var(--border);
 }
 
+.hyp-chyp-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+  opacity: 0.5;
+}
+
 .hyp-tool-chips, .hyp-actor-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 
 .hyp-tool-chip {
