@@ -474,6 +474,363 @@
           "fpr": "EDR/AV processes may restart themselves after updates, appearing as a stop/start cycle. Allowlist service restarts triggered by the security vendor's own update service. Alert on terminations initiated by non-vendor processes or by drivers loaded from non-standard paths."
         }
       ]
+    },
+    "T1566.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1566.001-001",
+          "title": "Office App Spawning Suspicious Child Process",
+          "severity": "critical",
+          "statement": "A threat actor has delivered a malicious macro-enabled document via spearphishing email and the victim has opened and enabled content, causing a Microsoft Office application to spawn an unexpected child process. Hunt for cmd.exe, powershell.exe, wscript.exe, mshta.exe, or certutil.exe as direct children of winword.exe, excel.exe, powerpnt.exe, or outlook.exe in process creation telemetry.",
+          "pivots": [
+            { "label": "Sysmon EID 1", "detail": "ParentImage endswith (winword.exe OR excel.exe OR powerpnt.exe OR outlook.exe OR onenote.exe) AND Image endswith (cmd.exe OR powershell.exe OR wscript.exe OR cscript.exe OR mshta.exe OR certutil.exe OR regsvr32.exe OR rundll32.exe OR msiexec.exe OR bitsadmin.exe)" },
+            { "label": "Sysmon EID 11 — payload drop", "detail": "Image endswith (winword.exe OR excel.exe OR powerpnt.exe) AND TargetFilename endswith (.exe OR .dll OR .bat OR .vbs OR .js OR .hta OR .ps1) AND TargetFilename contains (\\AppData\\Local\\Temp\\ OR \\Users\\Public\\) — file drop from Office process into staging path." },
+            { "label": "WinEvt 4688 fallback", "detail": "NewProcessName endswith (powershell.exe OR cmd.exe) AND ParentProcessName endswith (winword.exe OR excel.exe OR powerpnt.exe). Supplement with CommandLine field when process auditing includes command-line logging." }
+          ],
+          "tools": ["Macro-enabled .docm/.xlsm", "VBA dropper", "mshta.exe", "wscript.exe"],
+          "actors": ["APT28", "APT32", "Lazarus Group", "TA551 (Shathak)", "Emotet"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_office_susp_child_processes", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_susp_child_processes.yml" },
+            { "label": "Sigma: proc_creation_win_office_spawn_exe_from_users_directory", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_spawn_exe_from_users_directory.yml" },
+            { "label": "CISA AA25-141B — LummaC2 spearphishing attachment", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141b" }
+          ],
+          "fpr": "Legitimate Office add-ins (Adobe PDF Maker, Grammarly, DocuSign) spawn child processes from Office applications. Allowlist by signed binary path under C:\\Program Files and verified publisher. Exclude clicks on legitimate mailto: links in Outlook that launch the default mail client."
+        },
+        {
+          "id": "HYP-T1566.001-002",
+          "title": "OneNote Embedded Script Execution After Open",
+          "severity": "high",
+          "statement": "A threat actor is suspected of embedding a malicious script or executable inside a OneNote .one file delivered as an email attachment, exploiting user click-to-run behavior to execute payloads from the OneNote process. Hunt for onenote.exe spawning scripting interpreters or dropping executables to %TEMP% in Sysmon EID 1 and EID 11 telemetry.",
+          "pivots": [
+            { "label": "Sysmon EID 1", "detail": "ParentImage endswith onenote.exe AND Image endswith (cmd.exe OR powershell.exe OR wscript.exe OR cscript.exe OR mshta.exe OR hh.exe OR regsvr32.exe)" },
+            { "label": "Sysmon EID 11 — attachment extraction", "detail": "Image endswith onenote.exe AND TargetFilename endswith (.exe OR .bat OR .vbs OR .hta OR .js) AND TargetFilename contains (\\AppData\\Local\\Temp\\ OR \\AppData\\Roaming\\) — embedded attachment extraction before execution." },
+            { "label": "Sysmon EID 3 — network follow-on", "detail": "Image endswith (wscript.exe OR cscript.exe OR powershell.exe) AND ParentImage endswith onenote.exe AND Initiated = true — scripting engine making outbound connection immediately after launch from OneNote parent confirms staged download." }
+          ],
+          "tools": ["OneNote .one lure", "wscript.exe", "mshta.exe", "QakBot dropper"],
+          "actors": ["TA577", "TA570", "Qakbot (QBot)", "IcedID"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_office_onenote_susp_child_processes", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_onenote_susp_child_processes.yml" },
+            { "label": "Sigma: proc_creation_win_office_onenote_embedded_script_execution", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_onenote_embedded_script_execution.yml" },
+            { "label": "CISA AA23-341A — Star Blizzard spearphishing", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-341a" }
+          ],
+          "fpr": "OneNote legitimately opens attachments using the registered handler (e.g., .pdf opens Acrobat). Exclude child processes where Image is a known document viewer (AcroRd32.exe, FoxitPDFReader.exe) signed by a trusted publisher. Alert only on scripting hosts and LOLBINs."
+        },
+        {
+          "id": "HYP-T1566.001-003",
+          "title": "WMIC Execution Proxied via Office Process",
+          "severity": "high",
+          "statement": "A threat actor is suspected of using a macro inside a spearphishing attachment to call wmic.exe with process call create to break the direct Office parent-child chain and proxy execution of a secondary payload, evading parent-process-based detection. Hunt for wmic.exe spawned by an Office application with CommandLine containing process call create alongside a LOLBin or script interpreter path.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — wmic proxy", "detail": "ParentImage endswith (winword.exe OR excel.exe OR powerpnt.exe) AND Image endswith wmic.exe AND CommandLine contains 'process call create'" },
+            { "label": "Sysmon EID 1 — grandchild process", "detail": "ParentImage endswith wmic.exe AND Image endswith (powershell.exe OR cmd.exe OR mshta.exe OR regsvr32.exe OR rundll32.exe) — pivot from the proxied wmic parent to find the actual payload launcher." },
+            { "label": "WinEvt 4104 correlation", "detail": "ScriptBlockText contains (New-Object Net.WebClient OR DownloadString OR IEX OR Invoke-Expression) WITHIN 30 seconds of a Sysmon EID 1 wmic.exe process spawned from an Office parent." }
+          ],
+          "tools": ["wmic.exe (LOLBIN)", "VBA macro", "Cobalt Strike stager"],
+          "actors": ["APT32", "FIN7", "TA551 (Shathak)"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_wmic_susp_execution_via_office_process", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wmic_susp_execution_via_office_process.yml" },
+            { "label": "Sigma: proc_creation_win_office_from_proxy_executing_regsvr32_payload2", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_from_proxy_executing_regsvr32_payload2.yml" },
+            { "label": "CISA AA24-109A — Akira ransomware initial access via phishing", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-109a" }
+          ],
+          "fpr": "SCCM and enterprise software deployment frameworks occasionally use wmic.exe for remote process invocation. Exclude cases where the wmic CommandLine target binary is under C:\\Program Files or signed by a known software vendor. Alert on staging paths (%TEMP%, %APPDATA%, %PUBLIC%)."
+        }
+      ]
+    },
+    "T1190": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1190-001",
+          "title": "Web Server Spawning Shell or Scripting Process",
+          "severity": "critical",
+          "statement": "A threat actor is suspected of exploiting a vulnerability in a public-facing web application and deploying a web shell, causing the web server process to spawn interactive shells or reconnaissance binaries inconsistent with normal application behavior. Hunt for w3wp.exe, httpd.exe, nginx.exe, tomcat.exe, or php-cgi.exe spawning cmd.exe, powershell.exe, or net.exe in Sysmon process creation logs.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — web shell spawn", "detail": "ParentImage endswith (w3wp.exe OR httpd.exe OR nginx.exe OR php-cgi.exe OR php.exe OR tomcat.exe OR java.exe OR UMWorkerProcess.exe) AND Image endswith (cmd.exe OR powershell.exe OR wscript.exe OR net.exe OR net1.exe OR whoami.exe OR ipconfig.exe OR nltest.exe)" },
+            { "label": "Sysmon EID 11 — webshell file creation", "detail": "Image endswith (w3wp.exe OR UMWorkerProcess.exe) AND TargetFilename endswith (.aspx OR .ashx OR .asmx OR .asp OR .php OR .jsp) AND TargetFilename contains (\\inetpub\\wwwroot\\ OR \\wwwroot\\ OR \\htdocs\\) — file written by IIS worker to web-accessible path." },
+            { "label": "WinEvt 4688 — Exchange-specific", "detail": "ParentProcessName contains UMWorkerProcess.exe AND NewProcessName endswith (cmd.exe OR powershell.exe) — ProxyShell/ProxyLogon indicator. Correlate with IIS logs for preceding requests to /owa/, /ecp/, or /autodiscover/ paths." }
+          ],
+          "tools": ["China Chopper webshell", "AntSword", "Godzilla", "ReGeorg"],
+          "actors": ["Volt Typhoon", "APT41", "Hafnium", "Ghost (Cring)"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_webshell_susp_process_spawned_from_webserver", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_webshell_susp_process_spawned_from_webserver.yml" },
+            { "label": "Sigma: file_event_win_exchange_webshell_drop_suspicious", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/file/file_event/file_event_win_exchange_webshell_drop_suspicious.yml" },
+            { "label": "CISA AA25-050A — Ghost (Cring) exploiting public-facing apps", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-050a" }
+          ],
+          "fpr": "IIS application pools legitimately spawn child processes for ASP.NET compilation (csc.exe, vbc.exe). Exclude by verifying the child is a known compiler under C:\\Windows\\Microsoft.NET. Alert on any interactive shell (cmd.exe, powershell.exe) or network/recon binary (net.exe, whoami.exe) regardless of path."
+        },
+        {
+          "id": "HYP-T1190-002",
+          "title": "Rapid Recon Commands from Web Server Process Tree",
+          "severity": "high",
+          "statement": "A threat actor who has achieved code execution via a vulnerable public-facing application is suspected of running rapid discovery commands from within the web server process tree to establish situational awareness before lateral movement. Hunt for reconnaissance command sequences where the parent process is any web server worker or Java runtime using process ancestry chaining, with 3+ recon commands within 60 seconds as a high-confidence threshold.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — recon chain", "detail": "ParentImage endswith (w3wp.exe OR java.exe OR javaw.exe OR php-cgi.exe OR tomcat.exe) AND Image endswith (whoami.exe OR ipconfig.exe OR net.exe OR net1.exe OR nltest.exe OR systeminfo.exe OR hostname.exe OR quser.exe) — 3+ such events within 60 seconds is high-confidence exploitation." },
+            { "label": "Sysmon EID 3 — unexpected outbound", "detail": "Image endswith (w3wp.exe OR java.exe) AND Initiated = true AND DestinationPort NOT IN (80, 443, 8080, 8443) AND DestinationIp NOT IN trusted_internal_ranges — unexpected outbound from web server process indicates web shell C2 or reverse shell." },
+            { "label": "IIS log correlation", "detail": "Correlate Sysmon EID 1 spawn time with IIS access log entries showing HTTP 200 responses to .aspx or .php files in unusual paths within ±5 seconds. Pivot on cs-uri-stem for requests targeting files not in normal application manifests." }
+          ],
+          "tools": ["Ivanti SSRF exploits", "Apache Log4Shell", "F5 BIG-IP exploits", "FortiOS exploits"],
+          "actors": ["APT41", "Pioneer Kitten", "Ghost (Cring)", "Volt Typhoon"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_webshell_hacking", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_webshell_hacking.yml" },
+            { "label": "CISA AA25-022A — Ivanti Cloud Service Application exploitation", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-022a" },
+            { "label": "CISA AA24-241A — Iranian actors exploiting public-facing applications", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-241a" }
+          ],
+          "fpr": "Java-based application servers regularly call java.exe or javaw.exe for legitimate operations. IIS application health monitoring may run systeminfo.exe on startup. Suppress alerts where CommandLine contains known monitoring tool arguments and the parent service account matches a registered application service account."
+        }
+      ]
+    },
+    "T1486": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1486-001",
+          "title": "Shadow Copy Deletion Prior to Ransomware Encryption",
+          "severity": "critical",
+          "statement": "A ransomware actor on Windows is suspected of deleting Volume Shadow Copies to prevent recovery before initiating file encryption, using vssadmin.exe, wmic.exe, or PowerShell to issue delete commands against Win32_ShadowCopy. Hunt for shadow copy deletion commands chained with bcdedit.exe recovery mode modification, especially executed from unusual parents or outside maintenance windows.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — vssadmin delete", "detail": "Image endswith vssadmin.exe AND CommandLine contains ('delete shadows' OR 'Delete Shadows') — correlate with ParentImage NOT IN (wbengine.exe, sdiagnhost.exe, StorSvc.exe) to exclude legitimate backup operations." },
+            { "label": "Sysmon EID 1 — wmic shadowcopy delete", "detail": "Image endswith wmic.exe AND CommandLine contains ('shadowcopy delete' OR 'Win32_ShadowCopy') AND CommandLine contains ('delete' OR '/nointeractive')" },
+            { "label": "Sysmon EID 1 — bcdedit recovery disable", "detail": "Image endswith bcdedit.exe AND CommandLine contains ('recoveryenabled No' OR 'bootstatuspolicy ignoreallfailures') — chain with shadow deletion within 5 minutes for high-confidence pre-encryption preparation." },
+            { "label": "PS EID 4104 — PowerShell deletion", "detail": "ScriptBlockText contains ('Get-WmiObject' OR 'gwmi') AND ScriptBlockText contains ('Win32_ShadowCopy') AND ScriptBlockText contains ('.Delete()' OR 'Remove-WmiObject')" }
+          ],
+          "tools": ["vssadmin.exe", "wmic.exe", "bcdedit.exe", "PowerShell Get-WmiObject"],
+          "actors": ["LockBit 3.0", "RansomHub", "Akira", "BlackCat/ALPHV", "Medusa", "Ghost (Cring)"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_susp_shadow_copies_deletion", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_susp_shadow_copies_deletion.yml" },
+            { "label": "Sigma: proc_creation_win_powershell_shadowcopy_deletion", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_shadowcopy_deletion.yml" },
+            { "label": "CISA AA25-071A — Medusa ransomware TTPs", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-071a" },
+            { "label": "CISA AA24-242A — RansomHub ransomware TTPs", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-242a" }
+          ],
+          "fpr": "Windows Server Backup (wbengine.exe) and third-party backup agents (Veeam, Acronis) delete and recreate shadow copies during normal backup cycles. Exclude events where ParentImage references a known backup service. Alert only when shadow deletion occurs outside scheduled backup windows or the parent is cmd.exe or powershell.exe."
+        },
+        {
+          "id": "HYP-T1486-002",
+          "title": "Mass File Rename Burst Indicating Active Encryption",
+          "severity": "critical",
+          "statement": "A ransomware actor is suspected of actively encrypting files across networked shares and local drives, producing a burst of file rename events where established file extensions are replaced by ransomware-specific extensions. Hunt for a single process generating more than 100 file rename events per minute across multiple directories, targeting document and database extensions.",
+          "pivots": [
+            { "label": "Sysmon EID 11 — mass rename heuristic", "detail": "Image NOT IN (explorer.exe, SearchIndexer.exe, MsMpEng.exe) AND TargetFilename endswith (.lockbit OR .akira OR .rhysida OR .medusa OR .locked OR .enc OR .ransom OR .crypt) — count EID 11 events per Image over 60-second rolling window; >100 events from a non-standard process is high-confidence." },
+            { "label": "Sysmon EID 11 — ransom note drop", "detail": "TargetFilename endswith (HOW_TO_DECRYPT.txt OR !!!RESTORE_FILES!!!.txt OR README_FOR_DECRYPT.txt OR RECOVER_FILES.txt) AND Image NOT IN (explorer.exe, notepad.exe) — ransom note creation by a non-interactive process confirms active encryption event." },
+            { "label": "Sysmon EID 3 — SMB lateral enumeration", "detail": "Image NOT IN (System, svchost.exe) AND DestinationPort = 445 AND count of unique DestinationIp > 10 within 120 seconds — lateral file enumeration across shares precedes network-share encryption in LockBit and RansomHub campaigns." }
+          ],
+          "tools": ["LockBit 3.0 encryptor", "RansomHub locker", "Akira encryptor", "Medusa locker"],
+          "actors": ["LockBit 3.0", "RansomHub", "Akira", "Medusa", "BlackSuit"],
+          "refs": [
+            { "label": "CISA AA25-071A — Medusa ransomware", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-071a" },
+            { "label": "CISA AA24-109A — Akira ransomware", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-109a" },
+            { "label": "DFIR Report", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Windows Search Indexer and antivirus engines generate high file-read volumes but not rename events. DLP agents may trigger similar EID 11 bursts. Exclude signed processes from known security vendors. Correlate file-rename bursts with CPU spikes and disk I/O for confirmation."
+        }
+      ]
+    },
+    "T1071.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1071.001-001",
+          "title": "Known C2 Framework User Agent in Proxy Logs",
+          "severity": "high",
+          "statement": "A threat actor has deployed a C2 implant using static user agent strings characteristic of Cobalt Strike, Metasploit, or Sliver frameworks, which differ from legitimate browser agents used on the same host. Hunt for outbound proxy log entries where the user agent matches known C2 framework patterns and the source process is not a recognized browser binary.",
+          "pivots": [
+            { "label": "Proxy / web gateway log", "detail": "cs-user-agent IN ('Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)', 'Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)') OR cs-user-agent contains ('Go-http-client' OR 'python-requests' OR 'curl/') from a Windows endpoint — documented Cobalt Strike and Metasploit default agents." },
+            { "label": "Sysmon EID 3 — non-browser HTTP", "detail": "Initiated = true AND DestinationPort IN (80, 443, 8080, 8443) AND Image NOT IN (chrome.exe, msedge.exe, firefox.exe, MicrosoftEdge.exe, Teams.exe, OneDrive.exe, svchost.exe) AND Image endswith (powershell.exe OR cmd.exe OR rundll32.exe OR regsvr32.exe OR mshta.exe) — LOLBin making HTTP/S connections is anomalous." },
+            { "label": "Sysmon EID 22 — DNS beacon regularity", "detail": "QueryName resolves to the same external domain queried by a non-browser process at near-uniform intervals (e.g., every 60 ± 5 seconds) over 15+ minutes — beaconing regularity distinguishes C2 from legitimate software update checks." }
+          ],
+          "tools": ["Cobalt Strike", "Metasploit Framework", "Sliver C2", "Havoc C2"],
+          "actors": ["APT28", "APT29", "APT41", "Lazarus Group", "RansomHub"],
+          "refs": [
+            { "label": "Sigma: proxy_ua_frameworks", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/web/proxy_generic/proxy_ua_frameworks.yml" },
+            { "label": "Sigma: proxy_hktl_cobalt_strike_malleable_c2_requests", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/web/proxy_generic/proxy_hktl_cobalt_strike_malleable_c2_requests.yml" },
+            { "label": "CISA AA25-141A — Russian GRU C2 infrastructure patterns", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" }
+          ],
+          "fpr": "Legacy enterprise applications and IoT management software sometimes use outdated user agents matching older IE or Firefox strings. Suppress by allowlisting known application server IPs and correlating the source process. Go-http-client agents may appear from legitimate Go-based tools such as Terraform — exclude by process path and signing certificate."
+        },
+        {
+          "id": "HYP-T1071.001-002",
+          "title": "Periodic Low-Interval HTTP Beacon to Single External Host",
+          "severity": "high",
+          "statement": "A C2 implant on a Windows endpoint is suspected of using regular HTTP/HTTPS polling to a single external IP or domain, producing a beaconing pattern distinguishable by time-delta uniformity from legitimate browser traffic which is inherently bursty and multi-destination. Hunt for non-browser processes making repeated HTTP connections to the same external destination at intervals of 30-300 seconds using Sysmon EID 3 or proxy logs, pivoting on jitter-adjusted inter-request time deltas.",
+          "pivots": [
+            { "label": "Sysmon EID 3 — beacon interval analysis", "detail": "Initiated = true AND Image NOT IN (chrome.exe, msedge.exe, firefox.exe, svchost.exe, MsMpEng.exe) AND DestinationIp is external — group by (Image, DestinationIp), compute stddev of inter-connection intervals; stddev < 5 seconds over >= 10 samples in 30 minutes is strong beaconing signal." },
+            { "label": "Firewall log pivot", "detail": "src_ip = endpoint AND dst_port IN (80, 443) AND bytes_out < 2000 AND bytes_in < 5000 per connection — small symmetric payloads at fixed byte sizes (matching Cobalt Strike default malleable profile sizes of 0-1024 bytes) are characteristic check-in traffic." },
+            { "label": "Sysmon EID 22 — DNS beacon", "detail": "QueryName = same_external_fqdn AND Image NOT IN (chrome.exe, msedge.exe, firefox.exe, svchost.exe) — repeated DNS resolution of the same domain by a non-browser process at fixed intervals confirms DNS-assisted HTTP C2." }
+          ],
+          "tools": ["Cobalt Strike Beacon (HTTP/HTTPS profile)", "Havoc Framework", "Brute Ratel C4"],
+          "actors": ["APT29 (Cozy Bear)", "APT41", "Scattered Spider", "BlackCat/ALPHV"],
+          "refs": [
+            { "label": "Sigma: proxy_ua_apt", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/web/proxy_generic/proxy_ua_apt.yml" },
+            { "label": "Sigma: dns_query_win_mal_cobaltstrike", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/dns_query/dns_query_win_mal_cobaltstrike.yml" },
+            { "label": "DFIR Report", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Windows Update (svchost.exe hosting wuauserv) and Microsoft telemetry services make regular HTTP/HTTPS connections to Microsoft CDN endpoints. Allowlist by destination domain suffix (.microsoft.com, .windowsupdate.com, .digicert.com). Antivirus cloud lookups (MsMpEng.exe) also exhibit regular intervals — exclude by signed binary and known cloud-AV domain."
+        }
+      ]
+    },
+    "T1105": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1105-001",
+          "title": "certutil.exe Used to Download Remote File",
+          "severity": "high",
+          "statement": "A threat actor with foothold access on a Windows host is suspected of abusing certutil.exe, a built-in PKI utility, to download additional tools or payloads from a remote HTTP/HTTPS URL using the -urlcache or -verifyctl flags as a living-off-the-land technique. Hunt for certutil.exe process creation events with CommandLine containing URL-fetch arguments pointing to external or non-PKI infrastructure.",
+          "pivots": [
+            { "label": "Sysmon EID 1", "detail": "Image endswith certutil.exe AND CommandLine contains ('-urlcache' OR '-verifyctl' OR '-URL') AND CommandLine contains ('http://' OR 'https://') AND CommandLine NOT contains ('crl.microsoft.com' OR 'ocsp.msocsp.com' OR 'pki.goog' OR 'cacerts.digicert.com')" },
+            { "label": "Sysmon EID 11 — output file", "detail": "Image endswith certutil.exe AND TargetFilename endswith (.exe OR .dll OR .bat OR .ps1 OR .vbs OR .bin) in (\\AppData\\ OR \\Temp\\ OR \\Public\\ OR \\ProgramData\\) — file written by certutil to a staging path within seconds of the download command." },
+            { "label": "Sysmon EID 3 — network connection", "detail": "Image endswith certutil.exe AND Initiated = true AND DestinationPort IN (80, 443) AND DestinationHostname NOT endswith (microsoft.com OR msocsp.com OR digicert.com OR globalsign.com) — certutil establishing outbound to non-PKI host confirms download abuse." }
+          ],
+          "tools": ["certutil.exe (LOLBIN)", "Cobalt Strike stager scripts"],
+          "actors": ["APT41", "Lazarus Group", "Volt Typhoon", "FIN7", "Akira"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_certutil_download", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_certutil_download.yml" },
+            { "label": "Sigma: proc_creation_win_certutil_download_file_sharing_domains", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_certutil_download_file_sharing_domains.yml" },
+            { "label": "CISA AA24-038A — Volt Typhoon LOTL techniques including certutil", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" }
+          ],
+          "fpr": "certutil.exe legitimately performs certificate chain verification and CRL downloads to Microsoft and CA infrastructure. Suppress events where DestinationHostname is a known CA OCSP or CRL endpoint. Software deployment scripts using certutil to install certificates from internal PKI should be allowlisted by source IP and destination domain."
+        },
+        {
+          "id": "HYP-T1105-002",
+          "title": "BITSAdmin or curl.exe Staging Tool from External URL",
+          "severity": "high",
+          "statement": "A threat actor on a Windows host is suspected of using bitsadmin.exe or the native curl.exe to silently download secondary payloads from external file-sharing domains or attacker-controlled infrastructure, leveraging built-in Windows transfer capabilities to avoid EDR tool-import alerts. Hunt for bitsadmin.exe with /transfer or /addfile arguments, or curl.exe with -o or --output flags pointing to staging paths, in Sysmon process creation logs.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — bitsadmin download", "detail": "Image endswith bitsadmin.exe AND CommandLine contains ('/transfer' OR '/addfile' OR '/create' OR '/resume') AND CommandLine contains ('http://' OR 'https://') AND CommandLine NOT contains (windowsupdate.com OR microsoft.com OR update.microsoft.com)" },
+            { "label": "Sysmon EID 1 — curl download", "detail": "Image endswith curl.exe AND CommandLine contains ('-o ' OR '--output ' OR '-O ') AND CommandLine contains ('http://' OR 'https://') AND TargetFilename NOT endswith (.html OR .json) — curl writing a binary or script to disk from an external URL." },
+            { "label": "Sysmon EID 11 — file drop correlation", "detail": "TargetFilename written by (bitsadmin.exe OR curl.exe) in (\\Temp\\ OR \\AppData\\ OR \\Public\\ OR \\ProgramData\\) AND TargetFilename endswith (.exe OR .dll OR .bat OR .ps1 OR .vbs) — BITS jobs write files to disk under the SYSTEM context; pivot on the target path." }
+          ],
+          "tools": ["bitsadmin.exe (LOLBIN)", "curl.exe (native Windows 10+)", "Background Intelligent Transfer Service"],
+          "actors": ["APT29", "Lazarus Group", "Black Basta", "FIN7", "RansomHub"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_bitsadmin_download_file_sharing_domains", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_bitsadmin_download_file_sharing_domains.yml" },
+            { "label": "Sigma: proc_creation_win_curl_susp_download", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_curl_susp_download.yml" },
+            { "label": "CISA AA24-242A — RansomHub using BITS for tool staging", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-242a" }
+          ],
+          "fpr": "Windows Update and SCCM use BITS extensively for patch delivery — suppress bitsadmin events where the URL targets windowsupdate.com, microsoft.com, or internal WSUS server IPs. curl.exe is used by developer tools and CI/CD pipelines; allowlist by parent process (git.exe, devenv.exe) and known internal repository URLs."
+        }
+      ]
+    },
+    "T1548.002": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1548.002-001",
+          "title": "fodhelper.exe UAC Bypass via Registry Hijack",
+          "severity": "high",
+          "statement": "A threat actor with a low-integrity foothold on Windows is suspected of using the fodhelper.exe UAC bypass technique, which exploits the auto-elevate behavior of fodhelper.exe to execute an arbitrary command written to HKCU\\Software\\Classes\\ms-settings\\shell\\open\\command with high integrity. Hunt for registry write events to that key path followed by fodhelper.exe spawning an unexpected high-integrity child process within seconds.",
+          "pivots": [
+            { "label": "Sysmon EID 13 — registry set", "detail": "TargetObject contains (HKCU\\Software\\Classes\\ms-settings\\shell\\open\\command) AND Details NOT = empty — any write to this key is suspicious; it has no legitimate user use case." },
+            { "label": "Sysmon EID 1 — fodhelper spawn chain", "detail": "ParentImage endswith fodhelper.exe AND Image NOT IN (fodhelper.exe, conhost.exe) — any child process of fodhelper.exe other than itself is the bypassed elevated payload. Capture full CommandLine." },
+            { "label": "WinEvt 4624 + integrity correlation", "detail": "Correlate Sysmon EID 1 (child of fodhelper.exe) with WinEvt 4624 TokenElevationType = 1 (full token) for the same process — confirms UAC bypass yielded a full high-integrity token." }
+          ],
+          "tools": ["UACME", "Metasploit bypassuac_fodhelper module", "PowerShell Empire bypassuac_fodhelper"],
+          "actors": ["APT41", "Lazarus Group", "FIN7", "Black Basta"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_uac_bypass_fodhelper", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_uac_bypass_fodhelper.yml" },
+            { "label": "Sigma: registry_set_bypass_uac_using_eventviewer", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_bypass_uac_using_eventviewer.yml" },
+            { "label": "CISA AA24-109A — Akira privilege escalation via UAC bypass", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-109a" }
+          ],
+          "fpr": "fodhelper.exe is a legitimate Windows Features on Demand helper launched by Windows Settings. Legitimate use produces no child processes beyond the features-on-demand UI workflow. Near-zero FPR: any child process of fodhelper.exe pointing to cmd.exe, powershell.exe, or a non-Windows binary is definitively suspicious."
+        },
+        {
+          "id": "HYP-T1548.002-002",
+          "title": "eventvwr.exe or computerdefaults.exe UAC Bypass Chain",
+          "severity": "high",
+          "statement": "A threat actor is suspected of using eventvwr.exe or computerdefaults.exe UAC bypass techniques that exploit auto-elevate COM objects and registry hijacking under HKCU to execute payloads at high integrity without a user prompt, a pattern documented in post-exploitation frameworks and ransomware pre-deployment stages. Hunt for registry writes to HKCU\\Software\\Classes\\mscfile or Folder\\shell\\open\\command followed immediately by eventvwr.exe or computerdefaults.exe spawning anomalous children.",
+          "pivots": [
+            { "label": "Sysmon EID 13 — mscfile hijack", "detail": "TargetObject contains (HKCU\\Software\\Classes\\mscfile\\shell\\open\\command OR HKCU\\Software\\Classes\\Folder\\shell\\open\\command) AND Details NOT = (empty OR default mmc.exe path) — writes to these keys are exclusively associated with the eventvwr UAC bypass." },
+            { "label": "Sysmon EID 1 — elevated child", "detail": "ParentImage endswith (eventvwr.exe OR computerdefaults.exe) AND Image NOT IN (mmc.exe, WerFault.exe, conhost.exe) — unexpected child process is the bypassed payload." },
+            { "label": "Sysmon EID 1 — SilentCleanup variant", "detail": "Image endswith schtasks.exe AND CommandLine contains ('SilentCleanup' OR 'DiskCleanup') AND CommandLine contains ('/change' OR '/run') — UACME technique #58 writes to HKCU\\Environment\\windir and triggers via task scheduler." }
+          ],
+          "tools": ["UACME (techniques #33, #58)", "Metasploit bypassuac_eventvwr", "Cobalt Strike elevate-uac"],
+          "actors": ["Lazarus Group", "RansomHub", "LockBit 3.0", "Conti"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_uac_bypass_eventvwr", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_uac_bypass_eventvwr.yml" },
+            { "label": "Sigma: proc_creation_win_uac_bypass_computerdefaults", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_uac_bypass_computerdefaults.yml" },
+            { "label": "CISA AA25-050A — Ghost (Cring) privilege escalation techniques", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-050a" }
+          ],
+          "fpr": "eventvwr.exe is regularly launched by administrators to view event logs; its normal child is mmc.exe. Suppress events where the child is mmc.exe with the standard EventViewer snap-in path. computerdefaults.exe has no legitimate programmatic use — any child process alert from it has near-zero FPR."
+        }
+      ]
+    },
+    "T1136.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1136.001-001",
+          "title": "net.exe Local User Account Created Outside Change Window",
+          "severity": "high",
+          "statement": "A threat actor with elevated privileges on a Windows host is suspected of creating a new local user account using net.exe or net1.exe, often with never-expire flags, to establish a persistent backdoor account that survives password rotation policies. Hunt for net.exe or net1.exe CommandLine patterns containing user /add outside of change-management windows, particularly from non-interactive parent processes.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — net user add", "detail": "Image endswith (net.exe OR net1.exe) AND CommandLine contains ('user' AND '/add') — baseline by comparing to approved IT change records; alert on events outside maintenance windows or from non-IT parent processes." },
+            { "label": "Sysmon EID 1 — never-expire flags", "detail": "Image endswith (net.exe OR net1.exe) AND CommandLine contains ('user' AND ('/expires:never' OR '/passwordchg:no' OR '/active:yes')) — persistent backdoor account creation pattern documented in Akira and Ghost ransomware campaigns." },
+            { "label": "WinEvt 4720 — SAM account creation", "detail": "EventID = 4720 AND SubjectLogonId NOT IN known_admin_logon_ids AND TargetUserName NOT matches IT_naming_convention — pivot on SubjectLogonId to identify the creating session and correlate with logon type." }
+          ],
+          "tools": ["net.exe", "net1.exe", "PowerShell New-LocalUser"],
+          "actors": ["Akira", "Ghost (Cring)", "BianLian", "Pioneer Kitten"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_net_user_add", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_net_user_add.yml" },
+            { "label": "CISA AA25-050A — Ghost (Cring) creating local accounts", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-050a" },
+            { "label": "CISA AA24-109A — Akira creating admin-group backdoor accounts", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-109a" }
+          ],
+          "fpr": "IT provisioning scripts and SCCM task sequences create local accounts during system imaging and application deployment. Allowlist by parent process (ccmexec.exe, setuphost.exe) and known service account naming conventions. Alert when account name does not match organizational naming standard or is created from an interactive shell by a non-IT user."
+        },
+        {
+          "id": "HYP-T1136.001-002",
+          "title": "Backdoor Account Immediately Added to Administrators Group",
+          "severity": "critical",
+          "statement": "A threat actor has created or activated a local account and immediately added it to the Administrators or Remote Desktop Users group to gain privileged persistent access to the compromised host. Hunt for sequential WinEvt 4720 (account created) and 4732 (member added to local security group) events within 60 seconds for the same TargetUserName, or net.exe commands adding a user to the Administrators group.",
+          "pivots": [
+            { "label": "WinEvt 4732 — group membership change", "detail": "EventID = 4732 AND TargetSid IN (S-1-5-32-544, S-1-5-32-555) — 544 = Administrators, 555 = Remote Desktop Users. Correlate with WinEvt 4720 for the same MemberSid within prior 120 seconds to confirm create-then-elevate pattern." },
+            { "label": "Sysmon EID 1 — net localgroup add", "detail": "Image endswith (net.exe OR net1.exe) AND CommandLine contains ('localgroup' AND ('administrators' OR 'Remote Desktop Users') AND '/add') — direct CLI method for elevating the backdoor account to admin." },
+            { "label": "Sysmon EID 1 — RDP group priming", "detail": "Image endswith (net.exe OR net1.exe) AND CommandLine contains ('localgroup' AND 'Remote Desktop Users' AND '/add') — accounts primed for RDP lateral movement, as seen in BianLian and Akira campaigns." }
+          ],
+          "tools": ["net.exe", "net1.exe", "PowerShell Add-LocalGroupMember"],
+          "actors": ["BianLian", "Akira", "Ghost (Cring)", "LockBit 3.0"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_susp_add_user_local_admin_group", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_susp_add_user_local_admin_group.yml" },
+            { "label": "Sigma: proc_creation_win_susp_add_user_remote_desktop_group", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_susp_add_user_remote_desktop_group.yml" },
+            { "label": "CISA AA23-136A — BianLian creating and elevating local admin accounts", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-136a" }
+          ],
+          "fpr": "Help desk and IT on-boarding scripts add users to the Remote Desktop Users group for legitimate remote support. Suppress when SubjectLogonId matches a verified IT service account or when the target account name follows the organizational naming standard. Alert on after-hours events or when SubjectUserName has no prior group-management history."
+        }
+      ]
+    },
+    "T1569.002": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1569.002-001",
+          "title": "PsExec Remote Service Installation Detected via EID 7045",
+          "severity": "high",
+          "statement": "A threat actor with administrative credentials is suspected of using PsExec or its Impacket equivalent to execute commands on a remote Windows host by installing a transient service that runs the attacker payload with SYSTEM privileges. Hunt for Windows System event 7045 where ServiceName is PSEXESVC or the ImagePath contains a UNC path, temp directory, or admin share, especially outside business hours.",
+          "pivots": [
+            { "label": "WinEvt 7045 — service installed", "detail": "EventID = 7045 (System log) AND (ServiceName = 'PSEXESVC' OR ImagePath contains ('\\\\' AND ('ADMIN$' OR 'C$' OR 'IPC$')) OR ImagePath contains (\\Windows\\Temp\\ OR \\ProgramData\\)) — PSEXESVC is the canonical PsExec service name; UNC ImagePaths indicate remote tool push via admin shares." },
+            { "label": "Sysmon EID 1 — PSEXESVC.exe execution", "detail": "Image endswith PSEXESVC.exe AND IntegrityLevel = System — the service binary executes as SYSTEM. Correlate with WinEvt 4624 LogonType = 3 from the source IP within 30 seconds prior to confirm the lateral movement path." },
+            { "label": "WinEvt 4624 + 4648 — lateral credential", "detail": "EventID = 4624 AND LogonType = 3 AND ProcessName = 'PSEXESVC.exe' OR EventID = 4648 AND TargetServerName = remote_host AND SubjectUserName = compromised_account — explicit credential logon events preceding PsExec on the remote host confirm admin-share lateral movement." }
+          ],
+          "tools": ["PsExec (SysInternals)", "Impacket psexec.py", "PAExec", "SharpExec"],
+          "actors": ["LockBit 3.0", "Black Basta", "Conti", "Scattered Spider", "FIN6"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_sysinternals_psexec_execution", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sysinternals_psexec_execution.yml" },
+            { "label": "Sigma: win_security_metasploit_or_impacket_smb_psexec_service_install", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_metasploit_or_impacket_smb_psexec_service_install.yml" },
+            { "label": "CISA AA23-165A — LockBit using PsExec for lateral movement", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-165a" }
+          ],
+          "fpr": "Legitimate IT administrators use PsExec for remote troubleshooting and software deployment. Allowlist by source IP belonging to a designated jump server or management VLAN and cross-reference with approved change tickets. Alert on PsExec originating from end-user workstations, lateral PsExec chains, or use outside business hours without a maintenance record."
+        },
+        {
+          "id": "HYP-T1569.002-002",
+          "title": "sc.exe Creating Service with Suspicious Binary Path",
+          "severity": "high",
+          "statement": "A threat actor with elevated access on Windows is suspected of creating a persistent or one-shot service using sc.exe that points to a payload in a non-standard path to execute malware with SYSTEM privileges while masquerading as a legitimate service. Hunt for sc.exe create or config commands specifying binpath values in world-writable or staging directories.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — sc create staging binpath", "detail": "Image endswith sc.exe AND CommandLine contains ('create' OR 'config') AND CommandLine contains ('binpath=' OR 'binPath=') AND CommandLine contains (\\AppData\\ OR \\Temp\\ OR \\ProgramData\\ OR \\Users\\Public\\ OR '\\\\')" },
+            { "label": "Sysmon EID 13 — registry service key creation", "detail": "TargetObject contains (HKLM\\SYSTEM\\CurrentControlSet\\Services\\) AND Details contains (\\AppData\\ OR \\Temp\\ OR \\ProgramData\\ OR \\Users\\Public\\) AND Image NOT IN (services.exe, svchost.exe, msiexec.exe) — direct registry write to Services hive from a non-system process." },
+            { "label": "WinEvt 7045 + 7036 sequence", "detail": "EventID = 7045 AND ImagePath contains (\\Temp\\ OR \\AppData\\ OR \\ProgramData\\) — new service with non-standard path. Chain with EventID = 7036 for same ServiceName entering Running state within 60 seconds to confirm activation." }
+          ],
+          "tools": ["sc.exe", "PowerShell New-Service", "reg.exe service key manipulation"],
+          "actors": ["Volt Typhoon", "APT41", "Akira", "Ghost (Cring)", "Black Basta"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_sc_create_service", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sc_create_service.yml" },
+            { "label": "Sigma: proc_creation_win_sc_service_path_modification", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sc_service_path_modification.yml" },
+            { "label": "CISA AA24-038A — Volt Typhoon service abuse for persistence", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" }
+          ],
+          "fpr": "Software installers (msiexec.exe) and enterprise deployment tools (SCCM ccmexec.exe, PDQ Deploy) create services with binpaths in ProgramData or custom application directories. Allowlist by parent process (msiexec.exe, ccmsetup.exe), publisher signature on the binpath binary, and known application install paths. Alert when binpath is unsigned, in a user-writable path, or when sc.exe is invoked interactively."
+        }
+      ]
     }
   }
 }
