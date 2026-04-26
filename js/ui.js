@@ -76,21 +76,30 @@ export function renderResults(result) {
     return;
   }
 
+  if (result.items.length === 0 && result._total !== undefined) {
+    $('hyp-state').innerHTML = `
+      <div class="hyp-error">
+        <div class="hyp-error-box">&gt; No techniques match the active filters — <a href="#" onclick="window.__clearFilters();return false;" style="color:var(--accent);text-decoration:none">clear filters</a> to restore all ${result._total} results.</div>
+      </div>`;
+    return;
+  }
+
   const hypotheses = result.items.map(t => generateHypothesis(t));
+  const total = result._total;
 
   if (result.type === 'technique') {
-    renderTechniqueResults(hypotheses, result.query);
+    renderTechniqueResults(hypotheses, result.query, total);
   } else {
-    renderActorResults(result, hypotheses);
+    renderActorResults(result, hypotheses, total);
   }
 }
 
-function renderTechniqueResults(hypotheses, query) {
+function renderTechniqueResults(hypotheses, query, total) {
   const parent = hypotheses.find(h => !h.isSub);
   const subs   = hypotheses.filter(h => h.isSub);
 
   let html = `<div class="hyp-results">`;
-  html += renderSummaryBar(hypotheses.length, `${hypotheses.length} hypothesis${hypotheses.length !== 1 ? 'es' : ''} for "${escapeHtml(query)}"`);
+  html += renderSummaryBar(hypotheses.length, `hypothesis${hypotheses.length !== 1 ? 'es' : ''} for "${escapeHtml(query)}"`, total);
 
   if (parent) html += renderCard(parent);
   if (subs.length) {
@@ -108,13 +117,13 @@ function renderTechniqueResults(hypotheses, query) {
   $('hyp-state').innerHTML = html;
 }
 
-function renderActorResults(result, hypotheses) {
+function renderActorResults(result, hypotheses, total) {
   const groups  = groupByTactic(hypotheses);
   const tactics = groups.length;
 
   let html = `<div class="hyp-results">`;
   html += renderActorHeader(result.actor, hypotheses.length, tactics);
-  html += renderSummaryBar(hypotheses.length, `${hypotheses.length} technique${hypotheses.length !== 1 ? 's' : ''} · ${tactics} tactic${tactics !== 1 ? 's' : ''}`);
+  html += renderSummaryBar(hypotheses.length, `technique${hypotheses.length !== 1 ? 's' : ''} · ${tactics} tactic${tactics !== 1 ? 's' : ''}`, total);
 
   for (const { tactic, items } of groups) {
     const meta = TACTIC_META[tactic] || { label: tactic, color: '#7d8fb3' };
@@ -134,9 +143,13 @@ function renderActorResults(result, hypotheses) {
   $('hyp-state').innerHTML = html;
 }
 
-function renderSummaryBar(count, label) {
+function renderSummaryBar(count, label, total) {
+  const isFiltered = total !== undefined && total !== count;
+  const countHtml  = isFiltered
+    ? `<strong>${count}</strong> of ${total}`
+    : `<strong>${count}</strong>`;
   return `<div class="hyp-summary">
-    <div class="hyp-summary-left"><strong>${count}</strong> ${escapeHtml(label)}</div>
+    <div class="hyp-summary-left">${countHtml} ${escapeHtml(label)}</div>
   </div>`;
 }
 

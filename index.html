@@ -5,9 +5,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HYPOS - Every TTP. One Hypothesis.</title>
-  <meta name="description" content="HYPOS by H3AD-SEC — Hypothesis-driven threat hunting platform. Input MITRE technique IDs, groups, malware, tools, or campaigns. Get structured hunt hypotheses backed by ATT&CK STIX data.">
+  <meta name="description"
+    content="HYPOS by H3AD-SEC - Hypothesis-driven threat hunting platform. Input MITRE technique IDs, groups, malware, tools, or campaigns. Get structured hunt hypotheses backed by ATT&CK STIX data.">
   <link rel="icon" href="https://h3ad-sec.github.io/fevicon.png?v=2026" type="image/png">
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 
@@ -20,7 +22,8 @@
       <span></span><span></span><span></span>
     </div>
     <a class="nav-brand" href="https://h3ad-sec.github.io" target="_blank" rel="noopener">
-      <img id="navLogo" src="https://raw.githubusercontent.com/h3ad-sec/h3ad-sec.github.io/main/logo-dark.png" alt="H3AD-SEC" style="height:22px;vertical-align:middle;">
+      <img id="navLogo" src="https://raw.githubusercontent.com/h3ad-sec/h3ad-sec.github.io/main/logo-dark.png"
+        alt="H3AD-SEC" style="height:22px;vertical-align:middle;">
     </a>
     <div class="nav-links">
       <div class="nav-divider"></div>
@@ -63,11 +66,15 @@
   <div class="nav-drawer" id="navDrawer">
     <a href="https://h3ad-sec.github.io" target="_blank" rel="noopener" onclick="closeDrawer()">HOME ↗</a>
     <a href="https://h3ad-sec.github.io/H3AD-X/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-X ↗</a>
-    <a href="https://h3ad-sec.github.io/VERDIKT/" target="_blank" rel="noopener" onclick="closeDrawer()" class="drawer-sub">↳ VERDIKT ↗</a>
+    <a href="https://h3ad-sec.github.io/VERDIKT/" target="_blank" rel="noopener" onclick="closeDrawer()"
+      class="drawer-sub">↳ VERDIKT ↗</a>
     <a href="https://h3ad-sec.github.io/H3AD-AI/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-AI ↗</a>
-    <a href="https://h3ad-sec.github.io/H3AD-DETECT/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-DETECT ↗</a>
-    <a href="https://h3ad-sec.github.io/H3AD-HUNT/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-HUNT ↗</a>
-    <a href="https://h3ad-sec.github.io/HYPOS/" target="_blank" rel="noopener" onclick="closeDrawer()" class="drawer-sub nav-current">↳ HYPOS ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-DETECT/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-DETECT
+      ↗</a>
+    <a href="https://h3ad-sec.github.io/H3AD-HUNT/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-HUNT
+      ↗</a>
+    <a href="https://h3ad-sec.github.io/HYPOS/" target="_blank" rel="noopener" onclick="closeDrawer()"
+      class="drawer-sub nav-current">↳ HYPOS ↗</a>
     <a href="https://h3ad-sec.github.io/H3AD-OPS/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-OPS ↗</a>
     <a href="https://h3ad-sec.github.io/H3AD-DF/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-DF ↗</a>
     <a href="https://h3ad-sec.github.io/H3AD-IR/" target="_blank" rel="noopener" onclick="closeDrawer()">H3AD-IR ↗</a>
@@ -103,14 +110,9 @@
     <div class="hyp-search-wrap">
       <form id="hyp-form" autocomplete="off">
         <div class="hyp-search-box" id="hyp-search-box">
-          <input
-            id="hyp-input"
-            class="hyp-search-input"
-            type="text"
-            placeholder="T1003 · APT28 · Mimikatz · PowerShell Empire…"
-            spellcheck="false"
-            aria-label="Search technique, group, malware, tool, or campaign"
-          >
+          <input id="hyp-input" class="hyp-search-input" type="text"
+            placeholder="T1003 · APT28 · Mimikatz · PowerShell Empire…" spellcheck="false"
+            aria-label="Search technique, group, malware, tool, or campaign">
           <button type="submit" class="hyp-search-btn">HUNT</button>
           <div class="hyp-ac" id="hyp-ac"></div>
         </div>
@@ -124,6 +126,19 @@
           <span class="hyp-type-pill">TOOL</span>
           <span class="hyp-type-pill">CAMPAIGN</span>
         </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="hyp-filter-bar" id="hyp-filter-bar">
+        <div class="hyp-filter-row">
+          <span class="hyp-filter-label">PLATFORM</span>
+          <div class="hyp-filter-chips" id="plat-chips"></div>
+        </div>
+        <div class="hyp-filter-row">
+          <span class="hyp-filter-label">SOURCE</span>
+          <div class="hyp-filter-chips" id="src-chips"></div>
+        </div>
+        <button class="hyp-filter-clear-btn" id="hyp-filter-clear" onclick="window.__clearFilters()">RESET FILTERS</button>
       </div>
     </div>
 

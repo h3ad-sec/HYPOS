@@ -1,4 +1,4 @@
-import { loadData, clearCache } from './data-loader.js';
+import { loadData, getData, clearCache } from './data-loader.js';
 import { lookup, suggest, detectQueryType } from './lookup.js';
 import {
   setDataStatus, showLoading, appendTerminalLine, finalizeTerminal,
@@ -10,8 +10,96 @@ import {
 window.__hyposLookup = { detectQueryType };
 window.__hypSearch   = (q) => { runSearch(q); };
 
-let _dataReady = false;
+let _dataReady    = false;
 let _pendingQuery = null;
+let _lastResult   = null;
+
+// ── Filters ────────────────────────────────────────────────────
+
+const _activePlatforms = new Set();
+const _activeSources   = new Set();
+
+function applyFilters(result) {
+  if (!result || result.type === 'not-found') return result;
+  if (!_activePlatforms.size && !_activeSources.size) return result;
+
+  const items = result.items.filter(t => {
+    if (_activePlatforms.size && !t.platforms.some(p => _activePlatforms.has(p))) return false;
+    if (_activeSources.size  && !t.ds.some(ds => _activeSources.has(ds.split(':')[0].trim()))) return false;
+    return true;
+  });
+  return { ...result, items, _total: result.items.length };
+}
+
+function syncFilterUI() {
+  document.querySelectorAll('.hyp-fchip[data-plat]').forEach(el =>
+    el.classList.toggle('active', _activePlatforms.has(el.dataset.plat)));
+  document.querySelectorAll('.hyp-fchip[data-src]').forEach(el =>
+    el.classList.toggle('active', _activeSources.has(el.dataset.src)));
+  const anyActive = _activePlatforms.size > 0 || _activeSources.size > 0;
+  document.getElementById('hyp-filter-clear')?.classList.toggle('visible', anyActive);
+}
+
+function rerender() {
+  if (_lastResult) renderResults(applyFilters(_lastResult));
+}
+
+window.__togglePlatform = p => {
+  _activePlatforms.has(p) ? _activePlatforms.delete(p) : _activePlatforms.add(p);
+  syncFilterUI();
+  rerender();
+};
+
+window.__toggleSource = s => {
+  _activeSources.has(s) ? _activeSources.delete(s) : _activeSources.add(s);
+  syncFilterUI();
+  rerender();
+};
+
+window.__clearFilters = () => {
+  _activePlatforms.clear();
+  _activeSources.clear();
+  syncFilterUI();
+  rerender();
+};
+
+function initFilters(data) {
+  const PLATFORM_ORDER = [
+    'Windows', 'Linux', 'macOS', 'Network', 'Containers',
+    'IaaS', 'Azure AD', 'Office 365', 'SaaS', 'Google Workspace', 'PRE',
+  ];
+  const platSet = new Set();
+  for (const t of data.techniques) t.platforms.forEach(p => platSet.add(p));
+  const platforms = PLATFORM_ORDER.filter(p => platSet.has(p));
+
+  const platEl = document.getElementById('plat-chips');
+  if (platEl) {
+    platEl.innerHTML = platforms.map(p =>
+      `<span class="hyp-fchip" data-plat="${p}" onclick="window.__togglePlatform('${p}')">${p}</span>`
+    ).join('');
+  }
+
+  const srcCount = {};
+  for (const t of data.techniques) {
+    for (const ds of t.ds) {
+      const src = ds.split(':')[0].trim();
+      srcCount[src] = (srcCount[src] || 0) + 1;
+    }
+  }
+  const sources = Object.entries(srcCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([s]) => s);
+
+  const srcEl = document.getElementById('src-chips');
+  if (srcEl) {
+    srcEl.innerHTML = sources.map(s =>
+      `<span class="hyp-fchip" data-src="${s}" onclick="window.__toggleSource('${s}')">${s}</span>`
+    ).join('');
+  }
+
+  document.getElementById('hyp-filter-bar')?.classList.add('ready');
+}
 
 // ── Init ────────────────────────────────────────────────────────
 
@@ -35,6 +123,7 @@ async function loadATTACK() {
         finalizeTerminal(msg);
         setDataStatus('ready', msg);
         _dataReady = true;
+        initFilters(getData());
         if (_pendingQuery) {
           runSearch(_pendingQuery);
           _pendingQuery = null;
@@ -121,7 +210,8 @@ function runSearch(query) {
   window.history.replaceState(null, '', url);
 
   const result = lookup(q);
-  renderResults(result);
+  _lastResult = result;
+  renderResults(applyFilters(result));
   window.scrollTo({ top: document.getElementById('hyp-state')?.offsetTop - 160, behavior: 'smooth' });
 }
 
