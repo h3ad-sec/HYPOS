@@ -130,13 +130,17 @@ body.light .nav { background: rgba(245,247,251,0.92); }
 .nav-dropdown {
   display: none;
   position: absolute;
-  top: calc(100% + 4px);
+  top: 100%;
   left: 0;
+  padding-top: 4px;
+  min-width: 140px;
+  z-index: 200;
+}
+
+.nav-dropdown-inner {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  min-width: 140px;
-  z-index: 200;
   overflow: hidden;
 }
 
