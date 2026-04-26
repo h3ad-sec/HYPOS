@@ -263,7 +263,19 @@ function initMatrix() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789T1003T1059T1078INITIALACCESS EXECUTION PERSISTENCE PRIVILEGEESCALATION DEFENSEEVASION CREDENTIALACCESS DISCOVERY LATERALMOVEMENT COLLECTION C2 EXFILTRATION IMPACT HYPOTHESIS HUNT MITRE ATT&CK TTP STIX SIGMA KQL SPL'.split('');
+  const CHARS = [
+    'T1003','T1059','T1078','T1055','T1021','T1566','T1547','T1071','T1218','T1486','T1105','T1110','T1134','T1190',
+    'T1027','T1036','T1562','T1070','T1112','T1574','T1203','T1068','T1548','T1098','T1136','T1505','T1543','T1053',
+    'Initial Access','Execution','Persistence','Privilege Escalation','Defense Evasion','Credential Access',
+    'Discovery','Lateral Movement','Collection','Command & Control','Exfiltration','Impact','Reconnaissance',
+    'HYPOTHESIS','HUNT','PIVOT','MITRE','ATT&CK','TTP','STIX','SIGMA','KQL','SPL','EQL','YARA',
+    'Sysmon','WinEvtx','EDR','SIEM','SOAR','XDR','NDR','UBA','UEBA',
+    'LSASS','SAM','NTDS','Mimikatz','PsExec','Cobalt Strike','BloodHound','Rubeus','Impacket',
+    '4688','4624','4625','4672','4768','4769','4104','7045','1102',
+    'EID 1','EID 3','EID 10','EID 11','EID 13','EID 17','EID 22',
+    'IOC','IOA','TTP','OSINT','CTI','APT','FPR','TTL','C2','LOLBIN',
+    'H3AD-SEC','HYPOS','HypothesisDriven','ThreatHunt','DetectionEngineering',
+  ];
 
   let cols, drops;
 
@@ -280,7 +292,7 @@ function initMatrix() {
       : 'rgba(0,0,0,0.12)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = document.body.classList.contains('light') ? '#0077ff' : '#00ff9f';
-    ctx.font = '13px monospace';
+    ctx.font = '12px monospace';
     for (let i = 0; i < drops.length; i++) {
       const c = CHARS[Math.floor(Math.random() * CHARS.length)];
       ctx.fillText(c, i * 18, drops[i] * 18);
