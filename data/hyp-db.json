@@ -240,6 +240,654 @@
           "fpr": "PowerShell ScriptBlock logging (EID 4104) must be enabled via GPO — without it these events do not exist. The listed cmdlets are exclusively offensive with no legitimate administrative use. FPR is near-zero; any match warrants immediate investigation."
         }
       ]
+    },
+    "T1055": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1055-001",
+          "title": "Remote Thread Injection into High-Privilege Host Process",
+          "severity": "critical",
+          "statement": "A threat actor on Windows is suspected of injecting a malicious payload into a trusted host process (svchost.exe, explorer.exe, lsass.exe) via CreateRemoteThread or NtCreateThreadEx to execute shellcode in a high-integrity context. Hunt for Sysmon EID 8 events where the source process is not a known debugging tool and the target is a system process, especially when the StartAddress falls outside any mapped image region.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 8",
+              "detail": "SourceImage NOT IN (devenv.exe, dbgview.exe, vsjitdebugger.exe, msvsmon.exe) AND TargetImage IN (svchost.exe, explorer.exe, lsass.exe, winlogon.exe, spoolsv.exe) AND StartFunction is null or StartModule is null (unbacked thread start address)"
+            },
+            {
+              "label": "Sysmon EID 1 — parent anomaly",
+              "detail": "Unusual parent-child pairs preceding injection: cmd.exe or powershell.exe spawning a process that then triggers EID 8. Correlate source PID in EID 8 with a prior EID 1 showing the loader process was created from a suspicious parent."
+            },
+            {
+              "label": "Sysmon EID 10 — pre-injection handle",
+              "detail": "TargetImage IN (svchost.exe, explorer.exe) AND GrantedAccess IN (0x1fffff, 0x1f0fff, 0x40, 0x43a) — PROCESS_ALL_ACCESS or PROCESS_VM_WRITE + PROCESS_VM_OPERATION rights obtained by a non-system source process within 5 seconds of an EID 8 on the same target PID."
+            }
+          ],
+          "tools": ["Cobalt Strike Beacon", "Metasploit Meterpreter", "Havoc C2", "Sliver", "Donut"],
+          "actors": ["APT28", "APT29", "Lazarus Group", "FIN7", "Black Basta"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_hktl_createremotethread_inject", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/create_remote_thread/create_remote_thread_win_injecting_into_system_process.yml" },
+            { "label": "CISA AA23-193A — Lazarus Group TTPs", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-193a" },
+            { "label": "Red Canary TDR 2025", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
+          ],
+          "fpr": "Legitimate debuggers (devenv.exe, vsjitdebugger.exe, windbg.exe) use remote thread creation routinely. EDR agents themselves may inject threads into monitored processes. Exclude signed binaries from known vendors at well-known install paths; alert only on unbacked or unsigned source processes."
+        },
+        {
+          "id": "HYP-T1055-002",
+          "title": "Process Hollowing via Suspended-Process + WriteProcessMemory",
+          "severity": "critical",
+          "statement": "A threat actor on Windows is suspected of hollowing out a legitimate process by spawning it in a suspended state, unmapping its memory, and writing a malicious image prior to resumption — a technique used to masquerade malicious execution as a trusted binary. Hunt for Sysmon EID 8 where the started thread address resolves outside the target process's main image, combined with a preceding EID 1 showing the target was spawned with CREATE_SUSPENDED semantics (often reflected in unusual parent context or process start time delta).",
+          "pivots": [
+            {
+              "label": "Sysmon EID 8 — StartModule null",
+              "detail": "SourceImage != TargetImage AND StartModule is null AND TargetImage IN (svchost.exe, notepad.exe, msiexec.exe, regsvr32.exe, dllhost.exe) — unbacked start address indicates the original PE was replaced."
+            },
+            {
+              "label": "WinEvt 4688 — CommandLine audit",
+              "detail": "NewProcessName endswith svchost.exe AND ParentProcessName NOT IN (services.exe, MsMpEng.exe) — svchost.exe created by anything other than services.exe is a near-certain indicator of process hollowing or phantom process launch."
+            },
+            {
+              "label": "Sysmon EID 1 + EID 8 correlation",
+              "detail": "EID 1: Image = svchost.exe (or msiexec.exe) spawned by a user-mode process (e.g., explorer.exe, cmd.exe). Within 2 seconds, EID 8 originates from the same parent writing a remote thread into the newly created child. Sequence is characteristic of RunPE / process hollowing loaders."
+            }
+          ],
+          "tools": ["Cobalt Strike", "Metasploit", "Donut", "PE-sieve", "Process Ghosting loaders"],
+          "actors": ["APT41", "TA505", "Emotet", "QakBot", "LockBit 3.0"],
+          "refs": [
+            { "label": "Sigma: create_remote_thread_win_injecting_into_system_process", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/create_remote_thread/create_remote_thread_win_injecting_into_system_process.yml" },
+            { "label": "Sigma: proc_creation_win_svchost_unusual_parent", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_svchost_no_cli.yml" },
+            { "label": "CISA AA22-277A — Impacket & process injection", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-277a" }
+          ],
+          "fpr": "Windows Installer (msiexec.exe) and COM surrogate (dllhost.exe) are legitimately launched by various orchestrators; key discriminator is the parent process. Svchost.exe parent must always be services.exe — any deviation has near-zero legitimate justification. Tune on environment-specific orchestration tooling."
+        },
+        {
+          "id": "HYP-T1055-003",
+          "title": "DLL Injection via LoadLibrary Path Planted by Adversary",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of using WriteProcessMemory + CreateRemoteThread with a LoadLibrary call to force a target process to load an adversary-controlled DLL from a world-writable or user-controlled path. Hunt for Sysmon EID 7 (image load) events where a DLL loaded into a high-privilege process originates from a non-standard path and is unsigned or signed by an untrusted certificate.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 7 — image load",
+              "detail": "Image IN (svchost.exe, explorer.exe, lsass.exe) AND ImageLoaded NOT startswith (C:\\Windows\\System32, C:\\Windows\\SysWOW64, C:\\Program Files) AND Signed = false OR SignatureStatus != Valid"
+            },
+            {
+              "label": "Sysmon EID 8 — LoadLibrary address",
+              "detail": "StartFunction = LoadLibraryA OR StartFunction = LoadLibraryW AND TargetImage IN (explorer.exe, notepad.exe, svchost.exe) — StartFunction resolves to LoadLibrary when the injector uses the classic technique."
+            },
+            {
+              "label": "Sysmon EID 1 — staging",
+              "detail": "Unsigned DLL dropped to %TEMP%, %APPDATA%, C:\\ProgramData, or C:\\Users\\Public within 60 seconds before EID 7 showing the same filename loaded into a host process. Correlate by filename and directory."
+            }
+          ],
+          "tools": ["Cobalt Strike Reflective DLL Injection", "Meterpreter", "SharpInjector", "Injectora"],
+          "actors": ["APT29", "Turla", "FIN8", "Scattered Spider"],
+          "refs": [
+            { "label": "Sigma: image_load_win_dll_load_non_system_dir", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/image_load/image_load_side_loading_from_non_system_dir.yml" },
+            { "label": "CISA AA23-075A — LockBit 3.0 DLL injection", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" },
+            { "label": "Red Canary TDR 2025", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
+          ],
+          "fpr": "Third-party software frequently loads DLLs from non-system32 paths (e.g., antivirus, printer drivers, browser extensions). Build an allowlist of approved third-party DLL paths per environment. Alert on: unsigned + non-system path + high-privilege target process — this triple combination has very low FPR."
+        }
+      ]
+    },
+    "T1078": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1078-001",
+          "title": "Impossible Travel — Same Account Authenticating from Geographically Distant IPs",
+          "severity": "critical",
+          "statement": "A threat actor is suspected of using stolen valid account credentials to authenticate from an IP geographically incompatible with the prior authentication event for the same account, indicating credential theft and abuse. Hunt for WinEvt 4624 (Type 3 or Type 10) logon events where the same user authenticates from two IPs whose geolocations represent travel time exceeding human possibility within the observed time window.",
+          "pivots": [
+            {
+              "label": "WinEvt 4624 — logon correlation",
+              "detail": "EventID = 4624 AND LogonType IN (3, 10) — correlate TargetUserName across two events within a sliding 2-hour window where IpAddress field GeoIP lookup shows country/city change implying >1000 km travel. Alert when time delta between events < 60 minutes."
+            },
+            {
+              "label": "WinEvt 4625 — failed auths preceding success",
+              "detail": "TargetUserName matches a prior 4625 (failure) from a foreign IP followed by 4624 (success) — password spray or brute-force pattern leading to successful compromise. Threshold: >=5 failures from same IP within 10 minutes, then success."
+            },
+            {
+              "label": "WinEvt 4648 — explicit credential use",
+              "detail": "EventID = 4648 (logon with explicit credentials) where SubjectLogonId != TargetLogonId AND TargetServerName is a domain controller or file server — indicates pass-the-hash or RunAs-based lateral movement using valid account."
+            }
+          ],
+          "tools": ["Mimikatz (PTH)", "Impacket psexec/smbexec", "CrackMapExec", "Cobalt Strike", "NetSPI TokenImpersonation"],
+          "actors": ["APT29", "Scattered Spider", "LAPSUS$", "FIN7", "Midnight Blizzard"],
+          "refs": [
+            { "label": "Sigma: win_security_susp_failed_logon_reasons", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_failed_logon_reasons.yml" },
+            { "label": "CISA AA23-193A — Lazarus / valid accounts abuse", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-193a" },
+            { "label": "CISA AA24-038A — PRC actors valid accounts", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" }
+          ],
+          "fpr": "VPN split tunneling, travel, and roaming workers legitimately produce geolocation shifts. Correlate against VPN/ZScaler authentication logs and HR travel data before escalating. Cloud identity providers (Okta, Entra ID) have built-in impossible-travel policies that should be the primary control; this hunt supplements on-prem AD."
+        },
+        {
+          "id": "HYP-T1078-002",
+          "title": "Service Account Interactive Logon Outside Expected Baseline",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of using a compromised service account to perform interactive or network logons outside that account's normal usage pattern, leveraging the account's high privilege to move laterally or maintain persistence. Hunt for WinEvt 4624 events where the TargetUserName matches known service account naming conventions (svc*, *_svc, *service*) and LogonType is 2, 10, or 3 from an unexpected source workstation.",
+          "pivots": [
+            {
+              "label": "WinEvt 4624 — service account logon type",
+              "detail": "EventID = 4624 AND LogonType IN (2, 10) AND TargetUserName MATCHES regex (svc.*|.*_svc|.*service.*|.*admin.*) AND WorkstationName NOT IN (known_jump_server_list) — interactive logon from a service account is almost always anomalous."
+            },
+            {
+              "label": "WinEvt 4672 — special privileges assigned",
+              "detail": "EventID = 4672 (Special Privileges Assigned to New Logon) correlated to a service account logon in 4624 within the same LogonId. If PrivilegeList includes SeDebugPrivilege, SeTcbPrivilege, SeImpersonatePrivilege — escalate immediately."
+            },
+            {
+              "label": "WinEvt 4768 / 4769 — Kerberos for service accounts",
+              "detail": "EventID = 4769 (Kerberos service ticket request) where AccountName matches svc* AND ClientAddress is a workstation not in the expected service account operational subnet. Kerberoasting leaves a trail here when SPN tickets are requested with RC4 (TicketEncryptionType = 0x17)."
+            }
+          ],
+          "tools": ["Impacket GetUserSPNs (Kerberoasting)", "Rubeus", "CrackMapExec", "BloodHound"],
+          "actors": ["APT28", "FIN6", "LockBit 3.0", "Akira", "Black Basta"],
+          "refs": [
+            { "label": "Sigma: win_security_service_account_interactive_logon", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_service_account_interactive_logon.yml" },
+            { "label": "Sigma: win_security_susp_rc4_kerberos", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_rc4_kerberos.yml" },
+            { "label": "CISA AA25-141A — Akira ransomware valid accounts", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" }
+          ],
+          "fpr": "Some service accounts are legitimately used interactively by admins during maintenance windows. Baseline each svc account's historical LogonType distribution and source workstation list. Alert on deviations from the 90-day baseline. Patch-Tuesday maintenance windows are the most common FP source."
+        },
+        {
+          "id": "HYP-T1078-003",
+          "title": "Default or Vendor Credential Use Against Network Services",
+          "severity": "high",
+          "statement": "A threat actor on a network is suspected of authenticating to network devices, cloud consoles, or internal services using default or factory-reset credentials that were never rotated, bypassing detection tuned for stolen enterprise credentials. Hunt for WinEvt 4624 or VPN/cloud authentication logs showing logon by accounts matching known default username patterns (admin, Administrator, guest, sa, root) from external or unexpected IP ranges.",
+          "pivots": [
+            {
+              "label": "WinEvt 4624 — default account names",
+              "detail": "EventID = 4624 AND TargetUserName IN (Administrator, admin, Guest, DefaultAccount, WDAGUtilityAccount) AND LogonType = 3 AND IpAddress NOT IN (internal_CIDR_ranges) — external network logon with default account names."
+            },
+            {
+              "label": "WinEvt 4625 — failed default creds spray",
+              "detail": "EventID = 4625 AND TargetUserName IN (admin, Administrator, sa, root, guest) AND IpAddress != local — repeated failures suggest credential stuffing. Threshold: >=10 failures in 5 minutes from same IP targeting default usernames."
+            },
+            {
+              "label": "WinEvt 4776 — NTLM with default accounts",
+              "detail": "EventID = 4776 (NTLM credential validation) AND TargetUserName IN (Administrator, admin) AND Workstation shows external hostname or IP — NTLM authentication from outside the expected network boundary using default account."
+            }
+          ],
+          "tools": ["Hydra", "Medusa", "CrackMapExec", "Ncrack", "Spray"],
+          "actors": ["Volt Typhoon", "APT40", "Sandworm", "FIN7", "SCATTERED SPIDER"],
+          "refs": [
+            { "label": "Sigma: win_security_susp_logon_with_default_account", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_logon_event.yml" },
+            { "label": "CISA AA24-038A — Volt Typhoon default creds", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" },
+            { "label": "CISA AA22-277A", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-277a" }
+          ],
+          "fpr": "Built-in Administrator accounts are sometimes used by imaging/MDM solutions (SCCM, Autopilot). Enumerate legitimate uses during onboarding. Built-in Guest and DefaultAccount should never authenticate in production — zero-FPR alert candidates. WDAGUtilityAccount is used by Windows Sandbox; exclude that service context."
+        }
+      ]
+    },
+    "T1021.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1021.001-001",
+          "title": "RDP Logon from Unexpected External Source to Non-Jump Hosts",
+          "severity": "high",
+          "statement": "A threat actor is suspected of using stolen credentials or RDP brute-force to establish a Remote Desktop session directly to internal workstations or non-DMZ servers, bypassing jump-server controls. Hunt for WinEvt 4624 LogonType 10 events on hosts that are not designated RDP jump servers, especially where the source IP is outside the expected management subnet or is an anonymization service exit node.",
+          "pivots": [
+            {
+              "label": "WinEvt 4624 — Type 10 RemoteInteractive",
+              "detail": "EventID = 4624 AND LogonType = 10 AND TargetServerName NOT IN (jump_server_list) AND IpAddress NOT IN (management_CIDR) — direct RDP to workstation from unexpected source. Enrich IpAddress against threat intel for TOR/VPN/proxy ASN."
+            },
+            {
+              "label": "WinEvt 4778 / 4779 — session reconnect/disconnect",
+              "detail": "EventID = 4778 (Session Reconnected) on a host not in jump server list, OR multiple 4779 (Session Disconnected) followed by 4778 in rapid succession — indicates adversary cycling through RDP sessions. ClientName field resolving to foreign or mismatched hostname is a strong indicator."
+            },
+            {
+              "label": "Sysmon EID 3 — RDP network connection",
+              "detail": "Image = mstsc.exe AND DestinationPort = 3389 AND DestinationIp NOT IN (authorized_rdp_targets) — outbound RDP from unexpected source workstation, often indicating lateral movement hop. Also alert on alternate RDP ports (3390, 3391, 13389) to detect port-change evasion."
+            }
+          ],
+          "tools": ["mstsc.exe (LOLBIN)", "xfreerdp", "FreeRDP", "Remmina", "BlueKeep exploit (CVE-2019-0708)"],
+          "actors": ["LockBit 3.0", "Akira", "Black Basta", "APT28", "Scattered Spider"],
+          "refs": [
+            { "label": "Sigma: win_security_rdp_login_from_unknown_source", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_rdp_ngrok.yml" },
+            { "label": "Sigma: proc_creation_win_mstsc_rdp_tunnel", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_mstsc_rdp_to_unusual_dest.yml" },
+            { "label": "CISA AA25-141A — Akira RDP initial access", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" }
+          ],
+          "fpr": "Help desk and IT teams legitimately use RDP for support. Control via: jump-server allowlist in detection logic, business-hours baseline, and approved source IP ranges. RDP from management subnets to any internal host during business hours is a frequent FP; tune to off-hours or non-management source IPs first."
+        },
+        {
+          "id": "HYP-T1021.001-002",
+          "title": "RDP Tunnel via Ngrok or Reverse Proxy Tool",
+          "severity": "critical",
+          "statement": "A threat actor on a compromised Windows host is suspected of tunneling RDP traffic over an encrypted reverse proxy (ngrok, frp, Cloudflare Tunnel) to expose the internal host to external RDP access without requiring inbound firewall rules. Hunt for process creation of known tunneling binaries or DNS/network connections to tunnel provider infrastructure alongside a subsequent RDP session.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — tunnel binary",
+              "detail": "Image endswith (ngrok.exe OR frpc.exe OR cloudflared.exe OR bore.exe OR rathole.exe) OR CommandLine contains (ngrok tcp 3389 OR frpc -c OR tunnel --proto tcp) — tunneling binary execution preceding an RDP logon event."
+            },
+            {
+              "label": "Sysmon EID 22 — DNS to tunnel providers",
+              "detail": "QueryName endswith (ngrok.io OR ngrok-agent.com OR tunnel.cloudflare.com OR bore.pub OR serveo.net OR localhost.run) — DNS queries to known reverse-proxy tunnel providers from workstation or server."
+            },
+            {
+              "label": "WinEvt 4624 — RDP after tunnel established",
+              "detail": "EventID = 4624 AND LogonType = 10 within 60 seconds of an ngrok/frp DNS query or process start from the same host. Source IpAddress will appear as 127.0.0.1 or localhost (loopback) when tunnel is active — this loopback RDP source is a high-fidelity indicator."
+            }
+          ],
+          "tools": ["ngrok", "frp (fast reverse proxy)", "Cloudflare Tunnel", "bore", "rathole", "Chisel"],
+          "actors": ["Scattered Spider", "LockBit 3.0", "Black Basta", "Vice Society", "TA505"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_ngrok", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_ngrok.yml" },
+            { "label": "Sigma: win_security_rdp_ngrok", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_rdp_ngrok.yml" },
+            { "label": "CISA AA23-075A — tunneling for RDP", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" }
+          ],
+          "fpr": "Ngrok and Cloudflare Tunnel have legitimate developer and DevOps use cases. Baseline authorized use in CI/CD pipelines. Alert on execution from user %APPDATA%, %TEMP%, or Downloads folder rather than Program Files — that context has near-zero legitimate justification. Coordinate with IT to maintain an authorized tunneling tool allowlist."
+        }
+      ]
+    },
+    "T1566.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1566.001-001",
+          "title": "Office Document Spawning Shell Process (Malicious Macro)",
+          "severity": "critical",
+          "statement": "A threat actor is suspected of delivering a weaponized Office document with an embedded macro that spawns a shell interpreter or living-off-the-land binary to download and execute a second-stage payload. Hunt for WinEvt 4688 or Sysmon EID 1 events where a shell process (cmd.exe, powershell.exe, wscript.exe, mshta.exe) is spawned by an Office application parent (winword.exe, excel.exe, outlook.exe).",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — Office parent spawning shell",
+              "detail": "ParentImage IN (WINWORD.EXE, EXCEL.EXE, POWERPNT.EXE, OUTLOOK.EXE, MSPUB.EXE) AND Image IN (cmd.exe, powershell.exe, wscript.exe, cscript.exe, mshta.exe, bitsadmin.exe, certutil.exe, regsvr32.exe, rundll32.exe)"
+            },
+            {
+              "label": "Sysmon EID 3 — outbound connection from Office",
+              "detail": "Image IN (WINWORD.EXE, EXCEL.EXE) AND Initiated = true AND DestinationPort IN (80, 443, 8080) AND DestinationIp NOT IN (microsoft_CDN_ranges, o365_IP_ranges) — direct outbound HTTP from Office to unknown external IP indicates template injection or direct download cradle."
+            },
+            {
+              "label": "WinEvt 4688 — scripting engine child",
+              "detail": "ProcessName IN (wscript.exe, cscript.exe) AND ParentProcessName IN (WINWORD.EXE, EXCEL.EXE, OUTLOOK.EXE) — Windows Script Host launched by Office. CommandLine of child process should be decoded; look for DownloadFile, Shell, Run, WScript.Shell patterns."
+            }
+          ],
+          "tools": ["Emotet", "QakBot", "IcedID", "Dridex", "AgentTesla", "mshta.exe LOLBIN"],
+          "actors": ["TA505", "APT28", "APT33", "Lazarus Group", "FIN7", "Emotet botnet"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_office_shell", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_shell.yml" },
+            { "label": "Sigma: proc_creation_win_mshta_spawn_shell", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_mshta_spawn_shell.yml" },
+            { "label": "CISA AA23-075A — phishing with macro delivery", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" }
+          ],
+          "fpr": "Some Office add-ins and DDE data-refresh operations legitimately spawn scripts; these are typically signed, occur at predictable scheduled times, and target known internal servers. Allowlist by: signed child binary + known destination + scheduled task context. Raw cmd/powershell spawned interactively from Office outside of macro-approved policy is near-zero FPR."
+        },
+        {
+          "id": "HYP-T1566.001-002",
+          "title": "Protected View Bypass — Office Document Edited Immediately After Download",
+          "severity": "high",
+          "statement": "A threat actor is suspected of crafting a phishing attachment designed to social-engineer the victim into disabling Office Protected View or enabling macros, after which the payload executes. Hunt for Sysmon EID 11 showing an Office file written to disk from a mail client or browser (indicating attachment save), followed within 120 seconds by Sysmon EID 1 showing the same file opened by an Office application and spawning a child process.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 11 — attachment landing",
+              "detail": "TargetFilename endswith (.doc OR .docm OR .xls OR .xlsm OR .xlsb OR .ppt OR .pptm OR .docx OR .one OR .lnk OR .iso OR .img) AND Image IN (OUTLOOK.EXE, chrome.exe, msedge.exe, firefox.exe, teams.exe) — file written to %TEMP%\\Outlook\\* or Downloads\\ by a mail/browser process."
+            },
+            {
+              "label": "Sysmon EID 1 — child spawn within 120s",
+              "detail": "ParentImage IN (WINWORD.EXE, EXCEL.EXE, POWERPNT.EXE, ONENOTE.EXE) AND Image IN (cmd.exe, powershell.exe, wscript.exe, mshta.exe) AND UtcTime within 120 seconds of EID 11 TargetFilename matching same base filename — tight time correlation is the key signal."
+            },
+            {
+              "label": "Registry — Mark of the Web",
+              "detail": "HKCU\\Software\\Microsoft\\Office\\<version>\\<app>\\Security registry keys showing EnabledMacros or VBAWarnings changed from 2/3 to 1 within the same user session — indicates the user clicked 'Enable Content' under social engineering. Sysmon EID 13 on those registry paths confirms the change."
+            }
+          ],
+          "tools": ["Emotet", "QakBot", "IcedID", "GuLoader", "AgentTesla", "Formbook"],
+          "actors": ["TA505", "TA551 (Shathak)", "APT33", "Lazarus Group", "Mustang Panda"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_office_shell", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_shell.yml" },
+            { "label": "Sigma: registry_event_office_enable_macro_vba", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_event/registry_event_office_enable_macro_vba.yml" },
+            { "label": "CISA AA23-193A — phishing attachment TTPs", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-193a" }
+          ],
+          "fpr": "Users who open trusted documents from internal SharePoint or OneDrive sync may trigger file-write + open sequences. Key differentiator is the parent process for file creation: internal sync clients (OneDrive.exe) vs external mail clients (OUTLOOK.EXE). Tune on image that wrote the file — alert only when Outlook, browser, or Teams is the writer."
+        },
+        {
+          "id": "HYP-T1566.001-003",
+          "title": "ISO/LNK Smuggling Chain Bypassing MOTW",
+          "severity": "critical",
+          "statement": "A threat actor is suspected of delivering phishing attachments as ISO or ZIP containers holding a shortcut (LNK) or DLL, bypassing Mark of the Web inheritance so macros or execution policies do not block payload execution once the container is mounted. Hunt for Sysmon EID 1 events where the executing image path is within a mounted ISO volume (drive letter with no fixed-disk backing) or a recently extracted ZIP in Downloads, spawning a shell or LOLBin.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — execution from mounted ISO",
+              "detail": "CurrentDirectory matches regex ([D-Z]:\\\\[^\\\\]+\\\\) AND ParentImage = explorer.exe AND Image IN (cmd.exe, powershell.exe, rundll32.exe, mshta.exe, regsvr32.exe, wscript.exe) — child spawned by Explorer from a removable/optical volume letter is a strong ISO-mount execution indicator."
+            },
+            {
+              "label": "Sysmon EID 1 — LNK spawning LOLBin",
+              "detail": "ParentImage = explorer.exe AND ParentCommandLine contains .lnk AND Image IN (cmd.exe, powershell.exe, mshta.exe, wscript.exe, cscript.exe, regsvr32.exe) — shortcut file directly spawning a shell. LNK files in mounted ISOs or ZIPs lack MOTW zone identifier."
+            },
+            {
+              "label": "Sysmon EID 11 — ISO/IMG mount artifact",
+              "detail": "TargetFilename endswith (.iso OR .img OR .vhd OR .vhdx) written to Downloads\\ or %TEMP% by OUTLOOK.EXE, chrome.exe, or msedge.exe AND within 60 seconds a new volume appears (correlate with WinEvt 6416 — new device/volume mount)."
+            }
+          ],
+          "tools": ["GuLoader", "IcedID", "QakBot", "Bumblebee", "Cobalt Strike stagers"],
+          "actors": ["TA577", "TA551 (Shathak)", "Wizard Spider", "APT29", "FIN7"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_lnk_exec", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_lnk_spawn_non_explorer.yml" },
+            { "label": "Sigma: proc_creation_win_susp_execution_from_mounted_share", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_susp_execution_from_mounted_share.yml" },
+            { "label": "CISA AA22-277A — ISO/LNK delivery", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-277a" }
+          ],
+          "fpr": "CD/DVD and USB media (legitimate ISOs for software installation) also trigger Explorer-spawned processes from removable volumes. Suppress known software installer hashes (Windows ISOs, Oracle, VMware). Alert on: unknown publisher + shell spawn + no matching software deployment record in SCCM/Intune."
+        }
+      ]
+    },
+    "T1047": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1047-001",
+          "title": "WMI Lateral Movement via wmic.exe or Win32_Process Create",
+          "severity": "high",
+          "statement": "A threat actor on a Windows network is suspected of using WMI Win32_Process Create — via wmic.exe or a scripting interface — to execute commands on remote hosts without deploying PSExec or other explicit lateral movement tools, leveraging built-in Windows management infrastructure. Hunt for Sysmon EID 1 showing wmic.exe with /node: or process call create arguments, and for WinEvt 4688 showing WMI-spawned processes (parent = WmiPrvSE.exe) on target hosts.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — wmic with /node",
+              "detail": "Image endswith wmic.exe AND CommandLine contains (/node: OR /node:\"*\") AND CommandLine contains (process OR create OR call) — remote WMI command invocation. Further narrow: CommandLine contains (cmd, powershell, rundll32, regsvr32, certutil) as the spawned process."
+            },
+            {
+              "label": "Sysmon EID 1 — WmiPrvSE parent on target",
+              "detail": "ParentImage = WmiPrvSE.exe AND Image IN (cmd.exe, powershell.exe, cscript.exe, rundll32.exe, mshta.exe) — WMI provider host spawning a shell is the target-side indicator of remote WMI execution. This is the highest-fidelity WMI lateral movement signal."
+            },
+            {
+              "label": "WinEvt 4688 — WmiPrvSE child",
+              "detail": "EventID = 4688 AND CreatorProcessName endswith WmiPrvSE.exe AND NewProcessName IN (cmd.exe, powershell.exe, net.exe, whoami.exe, ipconfig.exe) — process creation audit log equivalent of the Sysmon EID 1 pivot above. Requires command-line auditing enabled via auditpol."
+            }
+          ],
+          "tools": ["wmic.exe (LOLBIN)", "Impacket wmiexec.py", "CrackMapExec --exec-method wmi", "Cobalt Strike WMI spawn", "SharpWMI"],
+          "actors": ["APT28", "APT41", "Volt Typhoon", "Wizard Spider", "FIN7"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_wmic_remote_execution", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wmic_remote_cmd_execution.yml" },
+            { "label": "Sigma: proc_creation_win_wmiprvse_spawn_shell", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wmiprvse_spawn_shell.yml" },
+            { "label": "CISA AA24-038A — Volt Typhoon WMI abuse", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" }
+          ],
+          "fpr": "System Center Configuration Manager (SCCM) and other management platforms use WMI extensively. WmiPrvSE.exe spawning msiexec.exe or cscript.exe from C:\\Windows\\System32 for known deployment tasks is a common FP. Suppress by: parent-child pair + known deployment hash or signed binary path. Alert primarily on: WmiPrvSE spawning cmd/powershell with interactive-looking command lines."
+        },
+        {
+          "id": "HYP-T1047-002",
+          "title": "WMI Persistence via __EventFilter and ActiveScriptEventConsumer",
+          "severity": "critical",
+          "statement": "A threat actor on a Windows host is suspected of establishing WMI-based persistence using __EventFilter, __EventConsumer, and __FilterToConsumerBinding objects to execute a payload automatically on system events (e.g., logon, interval, process start) without a scheduled task or registry run key. Hunt for Sysmon EID 19, 20, and 21 showing creation or modification of WMI subscriptions, especially ActiveScript or CommandLine consumer types executing from unusual paths.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 19 — WMI EventFilter",
+              "detail": "EventType = WmiEventFilter AND Query contains (SELECT * FROM __InstanceCreationEvent OR SELECT * FROM Win32_LogonSession OR SELECT * FROM __TimerEvent) AND Name NOT IN (known_management_tool_filter_names)"
+            },
+            {
+              "label": "Sysmon EID 20 — WMI Consumer",
+              "detail": "EventType = WmiEventConsumer AND ConsumerType IN (ActiveScriptEventConsumer, CommandLineEventConsumer) AND Destination contains (powershell OR cmd OR wscript OR cscript OR mshta OR rundll32 OR %TEMP% OR %APPDATA%)"
+            },
+            {
+              "label": "Sysmon EID 21 — Binding created",
+              "detail": "EventType = WmiEventConsumerToFilter — any new FilterToConsumerBinding where the Consumer references an ActiveScript or CommandLine consumer not in the approved baseline should be investigated. Correlate EID 21 with preceding EID 19 and 20 within the same session."
+            }
+          ],
+          "tools": ["PowerLurk", "WMImplant", "Cobalt Strike WMI persistence", "SharPersist", "custom MOF files"],
+          "actors": ["APT29", "APT41", "Turla", "FIN7", "Lazarus Group"],
+          "refs": [
+            { "label": "Sigma: sysmon_wmi_event_subscription", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/wmi_event/sysmon_wmi_event_subscription.yml" },
+            { "label": "Sigma: sysmon_wmi_persistence_commandline_event_consumer", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/wmi_event/sysmon_wmi_persistence_commandline_event_consumer.yml" },
+            { "label": "CISA AA23-193A — WMI persistence", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-193a" }
+          ],
+          "fpr": "SCCM, Symantec Endpoint, and some Microsoft monitoring agents create legitimate WMI subscriptions. Run a baseline of all EventFilter/EventConsumer objects in the environment before deploying detection. Any new subscription not matching the baseline is suspicious — FPR is very low in well-managed environments with a subscription inventory."
+        },
+        {
+          "id": "HYP-T1047-003",
+          "title": "WMI Used for Defense Evasion — Executing Payload via Scripting Consumer",
+          "severity": "high",
+          "statement": "A threat actor on a Windows system is suspected of using the WMI ActiveScriptEventConsumer to execute a VBScript or JScript payload triggered by a system event, bypassing application whitelisting controls that do not monitor WMI-initiated script execution. Hunt for WinEvt 4104 (ScriptBlock) or process creation logs showing wscript.exe or cscript.exe spawned by WmiPrvSE.exe with a script path in a temp or user-writable directory.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — wscript/cscript via WmiPrvSE",
+              "detail": "ParentImage = WmiPrvSE.exe AND Image IN (wscript.exe, cscript.exe, powershell.exe) AND CommandLine contains (%TEMP%\\ OR %APPDATA%\\ OR C:\\ProgramData\\ OR C:\\Users\\Public\\)"
+            },
+            {
+              "label": "WinEvt 4104 — script content inspection",
+              "detail": "EventID = 4104 AND ScriptBlockText contains (WScript.Shell OR CreateObject OR Shell.Run OR Net.WebClient OR DownloadFile) — script blocks triggered by WMI consumers often contain dropper or downloader logic."
+            },
+            {
+              "label": "Sysmon EID 7 — DLL loaded by WmiPrvSE",
+              "detail": "Image = WmiPrvSE.exe AND ImageLoaded NOT startswith C:\\Windows\\System32 AND Signed = false — unsigned or side-loaded DLL loaded into the WMI provider host indicates a more advanced WMI abuse variant (e.g., MOF file compiled DLL consumer)."
+            }
+          ],
+          "tools": ["WMImplant", "PowerLurk", "custom MOF", "Cobalt Strike"],
+          "actors": ["APT29", "Turla", "APT41", "FIN7"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_wmiprvse_spawn_shell", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wmiprvse_spawn_shell.yml" },
+            { "label": "Sigma: sysmon_wmi_persistence_commandline_event_consumer", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/wmi_event/sysmon_wmi_persistence_commandline_event_consumer.yml" },
+            { "label": "CISA AA24-038A", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" }
+          ],
+          "fpr": "WMI-initiated scripts from C:\\Windows\\System32 or signed application paths are usually legitimate (antivirus, SCCM). Alert specifically on script paths in user-writable locations. WMI spawning wscript.exe from %TEMP% has near-zero legitimate justification in production environments."
+        }
+      ]
+    },
+    "T1053.005": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1053.005-001",
+          "title": "Scheduled Task Created to Execute from Staging Path",
+          "severity": "high",
+          "statement": "A threat actor on a Windows host is suspected of creating a scheduled task via schtasks.exe or the Task Scheduler COM API to persist a payload located in a user-writable or temp directory, ensuring execution on a recurring basis or at logon. Hunt for WinEvt 4698 (task created) and Sysmon EID 1 (schtasks.exe /create) events where the task action command resolves to a path in %TEMP%, %APPDATA%, C:\\ProgramData, or C:\\Users\\Public.",
+          "pivots": [
+            {
+              "label": "WinEvt 4698 — task created",
+              "detail": "EventID = 4698 AND TaskContent contains (cmd.exe OR powershell.exe OR wscript.exe OR mshta.exe OR rundll32.exe OR regsvr32.exe) AND TaskContent contains (%TEMP% OR %APPDATA% OR C:\\ProgramData OR C:\\Users\\Public OR C:\\Windows\\Temp)"
+            },
+            {
+              "label": "Sysmon EID 1 — schtasks /create CLI",
+              "detail": "Image endswith schtasks.exe AND CommandLine contains /create AND CommandLine contains (/tr OR /xml) AND CommandLine contains (%TEMP% OR AppData OR ProgramData OR Public) — command-line scheduled task creation targeting a staging path."
+            },
+            {
+              "label": "WinEvt 4698 + 4702 — task modified within 60s",
+              "detail": "EID 4698 (created) followed by EID 4702 (updated) within 60 seconds for the same task name — adversary creating then immediately modifying a task is a common pattern from automated post-exploitation scripts (Cobalt Strike, Metasploit) that create then adjust task parameters."
+            }
+          ],
+          "tools": ["schtasks.exe (LOLBIN)", "Cobalt Strike schtask persistence", "SharPersist", "Metasploit persistence module", "SharpTask"],
+          "actors": ["LockBit 3.0", "Akira", "Black Basta", "APT41", "FIN7"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_schtasks_create", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_schtasks_creation.yml" },
+            { "label": "Sigma: win_security_schtask_creation_via_cli", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_schtask_creation.yml" },
+            { "label": "CISA AA25-141A — scheduled task persistence", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" }
+          ],
+          "fpr": "IT automation, patch management (WSUS, SCCM), AV products, and backup agents all create scheduled tasks. Maintain an approved task inventory. Alert specifically on: task action path in user-writable directory + created by a non-SYSTEM, non-service account interactively. Tasks created by cmd.exe or powershell.exe as the creating process are higher fidelity than those created by system services."
+        },
+        {
+          "id": "HYP-T1053.005-002",
+          "title": "Scheduled Task Executing Encoded or Downloaded Command",
+          "severity": "critical",
+          "statement": "A threat actor on a Windows system is suspected of creating a scheduled task whose action includes an encoded PowerShell command or a download-then-execute one-liner, enabling fileless or staged payload delivery at scheduled intervals. Hunt for WinEvt 4698 where the TaskContent XML action element contains Base64-encoded strings, download cradle keywords, or obfuscated command flags.",
+          "pivots": [
+            {
+              "label": "WinEvt 4698 — encoded or cradle in task XML",
+              "detail": "EventID = 4698 AND TaskContent contains (-enc OR -EncodedCommand OR DownloadString OR DownloadFile OR IEX OR Invoke-Expression OR FromBase64String OR bitsadmin OR certutil.*decode) — scheduled task action containing download or decode logic."
+            },
+            {
+              "label": "Sysmon EID 1 — task execution at trigger",
+              "detail": "ParentImage = taskeng.exe OR ParentImage = svchost.exe AND ParentCommandLine contains Schedule AND Image = powershell.exe AND CommandLine contains (-enc OR -nop OR bypass OR IEX) — task-triggered PowerShell with evasion flags."
+            },
+            {
+              "label": "WinEvt 4700 / 4701 — task enabled/disabled cycling",
+              "detail": "EID 4700 (task enabled) followed by EID 4701 (task disabled) in rapid cycles — an adversary testing or cycling a scheduled task to check execution. Also alert on EID 4700 for a task not in the approved baseline being enabled by a non-privileged account."
+            }
+          ],
+          "tools": ["Cobalt Strike", "Empire", "Metasploit", "SharPersist", "schtasks.exe LOLBIN"],
+          "actors": ["APT28", "APT29", "Wizard Spider", "Black Basta", "Akira"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_schtasks_powershell_encoded", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_schtasks_creation.yml" },
+            { "label": "Sigma: win_security_schtask_creation", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_schtask_creation.yml" },
+            { "label": "CISA AA23-075A — encoded task persistence", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" }
+          ],
+          "fpr": "Legitimate admin tasks may use PowerShell but rarely require encoding. SCCM deployment scripts running via scheduled tasks sometimes embed encoded PS; these are typically created by the SYSTEM account from a known SCCM server. Filter by: task created by SYSTEM + TaskContent shows known SCCM/Intune publishing source. Encoded commands in tasks created by user accounts are near-zero FPR."
+        }
+      ]
+    },
+    "T1112": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1112-001",
+          "title": "Registry Run Key Modification for Persistence",
+          "severity": "high",
+          "statement": "A threat actor on a Windows host is suspected of adding or modifying registry Run or RunOnce keys to execute a payload at user logon or system startup, establishing persistence without creating a scheduled task or service. Hunt for Sysmon EID 13 events modifying HKCU or HKLM Run keys where the target value data points to a binary in a user-writable or staging path.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 13 — Run key set",
+              "detail": "EventType = SetValue AND TargetObject contains (\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run OR \\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce OR \\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run) AND Details contains (%TEMP% OR %APPDATA% OR C:\\Users\\Public OR C:\\ProgramData OR \\AppData\\Roaming OR \\AppData\\Local)"
+            },
+            {
+              "label": "Sysmon EID 13 — Run key unusual binary",
+              "detail": "Same TargetObject as above AND Details endswith (.exe OR .dll OR .vbs OR .js OR .bat OR .ps1 OR .lnk) AND Image NOT IN (msiexec.exe, setup.exe, installer binaries signed by known vendors) — run key value set by a non-installer process is high confidence."
+            },
+            {
+              "label": "WinEvt 4657 — registry value modification",
+              "detail": "EventID = 4657 (Registry value modified) AND ObjectName contains CurrentVersion\\Run AND NewValue NOT IN (approved_persistence_baseline) — requires Object Access Auditing on registry keys. Provides actor AccountName and ProcessName for attribution."
+            }
+          ],
+          "tools": ["Cobalt Strike", "Metasploit persistence", "SharPersist", "Empire", "reg.exe (LOLBIN)", "PowerShell Set-ItemProperty"],
+          "actors": ["APT28", "APT29", "Emotet", "QakBot", "FIN7", "LockBit"],
+          "refs": [
+            { "label": "Sigma: registry_event_persistence_current_version_run", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_event/registry_event_persistence_current_version_run.yml" },
+            { "label": "Sigma: proc_creation_win_reg_add_run_key", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_reg_add_run_key.yml" },
+            { "label": "CISA AA23-075A — registry persistence", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" }
+          ],
+          "fpr": "Software installers routinely write Run keys — these are signed, installed from Program Files, and occur during known installation windows. Allowlist by: signed binary at C:\\Program Files\\ or C:\\Windows\\. The highest FPR source is legitimate apps (Spotify, Teams, OneDrive) adding update helpers to Run. Maintain a baseline of approved Run key values and alert on any deviation pointing to user-writable paths."
+        },
+        {
+          "id": "HYP-T1112-002",
+          "title": "Security Provider or Debugger Registry Keys Tampered for Persistence or Credential Access",
+          "severity": "critical",
+          "statement": "A threat actor on a Windows system is suspected of modifying HKLM Security Packages, Authentication Packages, or Image File Execution Options (IFEO) registry keys to load a malicious DLL through the SSP/AP interface or to hijack a target binary via the Debugger subkey. Hunt for Sysmon EID 13 on HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa and HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options where the value is changed to include an unusual module or path.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 13 — LSA Security Packages",
+              "detail": "EventType = SetValue AND TargetObject contains (\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\Security Packages OR \\SYSTEM\\CurrentControlSet\\Control\\Lsa\\Authentication Packages OR \\SYSTEM\\CurrentControlSet\\Control\\Lsa\\OSConfig\\Security Packages) AND Details NOT IN (known_approved_SSP_list) — adversary-added SSP/AP DLL persists across reboots and loads into lsass.exe."
+            },
+            {
+              "label": "Sysmon EID 13 — IFEO Debugger subkey",
+              "detail": "EventType = SetValue AND TargetObject contains \\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options AND TargetObject endswith \\Debugger AND Details NOT IN (ntsd.exe, windbg.exe, cdb.exe at known debugger paths) — IFEO Debugger set to an attacker binary causes it to launch instead of the target application (Sticky Keys hijack, etc.)."
+            },
+            {
+              "label": "Sysmon EID 7 — unexpected DLL loaded into lsass",
+              "detail": "Image = lsass.exe AND ImageLoaded NOT IN (known_lsass_dll_baseline) AND Signed = false OR SignatureStatus != Valid — newly loaded unsigned DLL into lsass after a reboot following LSA package registry modification confirms SSP/AP injection."
+            }
+          ],
+          "tools": ["Mimikatz (mimilib SSP)", "custom SSP DLLs", "Empire", "Cobalt Strike", "reg.exe"],
+          "actors": ["APT29", "Turla", "APT28", "Lazarus Group", "NOBELIUM"],
+          "refs": [
+            { "label": "Sigma: registry_event_add_load_service_in_safe_mode", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_event/registry_event_add_load_service_in_safe_mode.yml" },
+            { "label": "Sigma: registry_event_lsa_auth_package", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_event/registry_event_lsa_auth_package.yml" },
+            { "label": "CISA AA24-038A — LSA provider modification", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a" }
+          ],
+          "fpr": "Third-party MFA solutions and smart card middleware legitimately register Authentication Packages. Baseline all LSA Security Package entries and treat any new value not matching approved packages as critical. IFEO Debugger keys set by Visual Studio for managed debugging are common in dev environments — exclude VS install paths. In production, both are near-zero FPR."
+        },
+        {
+          "id": "HYP-T1112-003",
+          "title": "DisableAntiSpyware or DisableRealtimeMonitoring Registry Keys Modified",
+          "severity": "critical",
+          "statement": "A threat actor on a Windows host is suspected of setting Windows Defender registry keys to disable real-time protection or reporting, disabling a primary defense layer before deploying ransomware or a persistent implant. Hunt for Sysmon EID 13 events where HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender or HKLM\\SOFTWARE\\Microsoft\\Windows Defender keys are modified to set Disable* values to 1.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 13 — Defender policy keys",
+              "detail": "EventType = SetValue AND TargetObject contains (\\SOFTWARE\\Policies\\Microsoft\\Windows Defender OR \\SOFTWARE\\Microsoft\\Windows Defender\\Real-Time Protection) AND TargetObject endswith (DisableAntiSpyware OR DisableRealtimeMonitoring OR DisableBehaviorMonitoring OR DisableOnAccessProtection OR DisableScanOnRealtimeEnable) AND Details = DWORD (0x00000001)"
+            },
+            {
+              "label": "Sysmon EID 1 — reg.exe or PowerShell setting the key",
+              "detail": "Image IN (reg.exe, powershell.exe) AND CommandLine contains (DisableRealtimeMonitoring OR DisableAntiSpyware OR Set-MpPreference.*-Disable OR Add-MpPreference) AND CommandLine contains (1 OR $true OR Disable) — command line that modifies Defender policy."
+            },
+            {
+              "label": "WinEvt 5001 / 5004 / 5007 — Defender config changes",
+              "detail": "EventID = 5007 in the Microsoft-Windows-Windows Defender/Operational log: 'Changed configuration' — logs the old and new value for Defender configuration changes. Parse OldValue vs NewValue to confirm a disable action. EID 5001 = Defender real-time protection disabled."
+            }
+          ],
+          "tools": ["reg.exe (LOLBIN)", "PowerShell Set-MpPreference", "Cobalt Strike Defender bypass modules", "Inno Setup ransomware dropper scripts"],
+          "actors": ["LockBit 3.0", "Akira", "Black Basta", "Cl0p", "ALPHV/BlackCat"],
+          "refs": [
+            { "label": "Sigma: registry_event_disable_windows_defender", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_event/registry_event_disable_windows_defender.yml" },
+            { "label": "Sigma: proc_creation_win_powershell_set_mppreference_disable", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_disable_mde_components.yml" },
+            { "label": "CISA AA25-141A — Akira AV disable via registry", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" }
+          ],
+          "fpr": "Intune/SCCM-managed Defender policies deliver changes via HKLM\\Policies path, but changes are applied by trusted system processes (MsMpEng.exe, CSE DLL) not by cmd.exe or powershell.exe directly. Alert when Image = cmd.exe, powershell.exe, or reg.exe makes the change — that context is near-zero FPR in production. MDM policy changes from SYSTEM context are typically safe to suppress."
+        }
+      ]
+    },
+    "T1562.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1562.001-001",
+          "title": "Windows Defender Disabled via PowerShell Set-MpPreference",
+          "severity": "critical",
+          "statement": "A threat actor on a Windows host is suspected of using PowerShell's Set-MpPreference or Add-MpPreference cmdlets to disable Windows Defender real-time monitoring, IOAV protection, or script scanning prior to deploying ransomware or a persistent implant. Hunt for Sysmon EID 1 and EID 4104 events showing Set-MpPreference with disabling parameters executed by non-SYSTEM accounts or from unexpected parent processes.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — Set-MpPreference command line",
+              "detail": "Image endswith powershell.exe AND CommandLine contains Set-MpPreference AND CommandLine contains (-DisableRealtimeMonitoring $true OR -DisableBehaviorMonitoring $true OR -DisableIOAVProtection $true OR -DisableScriptScanning $true OR -DisableAntiSpyware $true OR -MAPSReporting 0)"
+            },
+            {
+              "label": "PS EID 4104 — script block inspection",
+              "detail": "EventID = 4104 AND ScriptBlockText contains (Set-MpPreference OR Add-MpPreference) AND ScriptBlockText contains (Disable OR $true OR -ExclusionPath OR -ExclusionProcess) — catches encoded or multi-stage scripts that invoke the cmdlet indirectly."
+            },
+            {
+              "label": "WinEvt 5007 — Defender operational log",
+              "detail": "Provider = Microsoft-Windows-Windows Defender AND EventID = 5007 AND Message contains 'MALWAREPROTECTION_CONFIG_CHANGED' AND NewValue contains (DisableRealtimeMonitoring = 0x1 OR DisableAntiSpyware = 0x1) — Defender's own log confirming the disable action, independent of process audit."
+            }
+          ],
+          "tools": ["PowerShell (LOLBIN)", "Cobalt Strike", "Metasploit", "custom ransomware droppers", "Inno Setup scripts"],
+          "actors": ["LockBit 3.0", "Akira", "Black Basta", "Cl0p", "ALPHV/BlackCat", "Hive"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_powershell_disable_mde_components", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_disable_mde_components.yml" },
+            { "label": "Sigma: posh_ps_malicious_commandlets", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_malicious_commandlets.yml" },
+            { "label": "CISA AA25-141A — Akira defense disable", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" }
+          ],
+          "fpr": "Legitimate IT admin scripts during maintenance may temporarily disable Defender components; these should be gated by a change management record and run from an approved admin workstation under a service account. In environments with third-party AV, Defender is sometimes policy-disabled — suppress when disabled by MsMpEng.exe or SYSTEM from a known MDM process tree. User or attacker context executing these cmdlets has near-zero FPR."
+        },
+        {
+          "id": "HYP-T1562.001-002",
+          "title": "EDR/AV Driver or Service Stopped via sc.exe or WDAC Bypass",
+          "severity": "critical",
+          "statement": "A threat actor on a Windows host with elevated privileges is suspected of terminating or unloading an EDR or AV product's kernel driver or service using sc.exe, net stop, or a vulnerable driver exploit (BYOVD) to blind defensive tooling prior to ransomware deployment. Hunt for Sysmon EID 1 showing sc.exe stop/delete targeting known security product service names, and for WinEvt 7036 (service state change) affecting security services.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — sc.exe stop/delete security service",
+              "detail": "Image endswith sc.exe AND CommandLine contains (stop OR delete OR disable OR config.*start=disabled) AND CommandLine contains known_security_service_names — e.g., MsMpSvc, WinDefend, SentinelAgent, CylanceSvc, CbDefense, CSFalconService, McShield, ekrn, avp."
+            },
+            {
+              "label": "WinEvt 7036 — service state change",
+              "detail": "EventID = 7036 (Service Control Manager) AND Message contains (WinDefend OR SentinelAgent OR CSFalconService OR CylanceSvc OR MsMpEng OR bdagent) AND Message contains stopped — security service stopped. Cross-correlate with the process that issued the stop command via EventID 7040 or Sysmon EID 1 timeline."
+            },
+            {
+              "label": "Sysmon EID 1 — BYOVD vulnerable driver load",
+              "detail": "Image IN (fltMC.exe, sc.exe) AND CommandLine contains (load OR start) AND CommandLine contains driver name of known BYOVD drivers (mhyprot2.sys, gdrv.sys, DBUtil_2_3.sys, zamguard64.sys, procexp152.sys) — loading a vulnerable third-party driver to kill EDR via kernel-level call."
+            }
+          ],
+          "tools": ["sc.exe (LOLBIN)", "net.exe (LOLBIN)", "GMER", "PCHunter", "Process Hacker", "BYOVD exploit kits", "AuKill"],
+          "actors": ["LockBit 3.0", "ALPHV/BlackCat", "Akira", "Cl0p", "AvosLocker", "REvil"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_sc_stop_service", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sc_disable_security_services.yml" },
+            { "label": "Sigma: proc_creation_win_susp_byovd_tools", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_susp_byovd_tools.yml" },
+            { "label": "CISA AA23-075A — EDR tampering / BYOVD", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" }
+          ],
+          "fpr": "Legitimate EDR upgrades or OS reinstallation tasks may stop and restart security services; these are gated by change management and run from SYSTEM or a designated service account. Alert when the stopping process parent is cmd.exe, powershell.exe, or a C2 implant process rather than a signed services orchestrator. Correlate with the change management calendar for near-zero FPR in production."
+        },
+        {
+          "id": "HYP-T1562.001-003",
+          "title": "Security Tool Exclusion Added to Defender or Third-Party AV",
+          "severity": "high",
+          "statement": "A threat actor on a Windows host is suspected of adding file path, process, or extension exclusions to Windows Defender or a third-party AV configuration, allowing malicious payloads to execute in an excluded directory without triggering signature or behavioral detection. Hunt for Sysmon EID 1 showing Add-MpPreference -ExclusionPath or registry writes to Defender Exclusion keys, particularly when the excluded path matches a known staging location.",
+          "pivots": [
+            {
+              "label": "Sysmon EID 1 — Add-MpPreference exclusion",
+              "detail": "Image endswith powershell.exe AND CommandLine contains Add-MpPreference AND CommandLine contains (-ExclusionPath OR -ExclusionProcess OR -ExclusionExtension) AND CommandLine contains (%TEMP% OR %APPDATA% OR C:\\ProgramData OR C:\\Users\\Public OR C:\\Windows\\Temp)"
+            },
+            {
+              "label": "Sysmon EID 13 — Defender exclusion registry key",
+              "detail": "EventType = SetValue AND TargetObject contains \\SOFTWARE\\Microsoft\\Windows Defender\\Exclusions\\Paths AND Details contains (%TEMP% OR C:\\ProgramData OR C:\\Users\\Public OR user-controlled path) — registry write adding an exclusion. Requires Sysmon monitoring registry value set events."
+            },
+            {
+              "label": "WinEvt 5007 — Defender config: ExclusionPath added",
+              "detail": "EventID = 5007 AND Message contains ExclusionPath AND NewValue contains a path not in the approved exclusion baseline — Defender operational log records all configuration changes including exclusion additions. Compare NewValue against an approved exclusion allowlist."
+            }
+          ],
+          "tools": ["PowerShell Add-MpPreference", "reg.exe", "Cobalt Strike", "Metasploit", "custom ransomware prep scripts"],
+          "actors": ["LockBit 3.0", "Akira", "Black Basta", "Cl0p", "Scattered Spider"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_powershell_add_exclusion_mde", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_disable_mde_components.yml" },
+            { "label": "Sigma: registry_event_disable_windows_defender", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_event/registry_event_disable_windows_defender.yml" },
+            { "label": "CISA AA25-141A — AV exclusion abuse", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a" }
+          ],
+          "fpr": "Enterprise software deployments (SQL Server, Oracle, backup agents) legitimately add Defender exclusions during installation, typically via SYSTEM-context installers from C:\\Program Files. Alert when: exclusion path is in a user-writable directory + added by a user-context process (not SYSTEM or a signed installer). Adding exclusions for paths already containing a newly dropped executable is a near-certain indicator — correlate file creation events."
+        }
+      ]
     }
   }
 }
