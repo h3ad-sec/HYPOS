@@ -4,7 +4,7 @@
 
 const STIX_URL  = 'https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json';
 const LOCAL_URL = './data/attack.json';
-const CACHE_KEY = 'hypos_v2';
+const CACHE_KEY = 'hypos_v3';
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 let _data  = null;
@@ -101,6 +101,34 @@ function firstSentence(t) {
 }
 
 function processBundle(bundle) {
+  // ── Pass 1: build data-source / data-component lookup tables ──────────────
+  // ATT&CK v9+ moved data sources to separate STIX objects linked via
+  // x-mitre-data-component --detects--> attack-pattern relationships.
+  // x_mitre_data_sources on attack-pattern is a deprecated convenience field.
+  const dsNameByStix  = {}; // x-mitre-data-source stix-id → name
+  const compStrByStix = {}; // x-mitre-data-component stix-id → "Source: Component"
+
+  for (const obj of bundle.objects) {
+    if (obj.type === 'x-mitre-data-source') dsNameByStix[obj.id] = obj.name;
+  }
+  for (const obj of bundle.objects) {
+    if (obj.type === 'x-mitre-data-component') {
+      const src = dsNameByStix[obj.x_mitre_data_source_ref] || '';
+      compStrByStix[obj.id] = src ? `${src}: ${obj.name}` : obj.name;
+    }
+  }
+
+  // attack-pattern stix-id → [data source strings] from "detects" relationships
+  const techDsMap = {};
+  for (const obj of bundle.objects) {
+    if (obj.type !== 'relationship' || obj.relationship_type !== 'detects') continue;
+    const comp = compStrByStix[obj.source_ref];
+    if (!comp) continue;
+    if (!techDsMap[obj.target_ref]) techDsMap[obj.target_ref] = [];
+    if (!techDsMap[obj.target_ref].includes(comp)) techDsMap[obj.target_ref].push(comp);
+  }
+
+  // ── Pass 2: index techniques and actors ───────────────────────────────────
   const techByStix  = {};
   const actorByStix = {};
   const techniques  = [];
@@ -115,6 +143,11 @@ function processBundle(bundle) {
     if (!id) continue;
 
     if (obj.type === 'attack-pattern') {
+      // Prefer convenience field if populated, else use detects-relationship sources
+      const ds = (obj.x_mitre_data_sources && obj.x_mitre_data_sources.length)
+        ? obj.x_mitre_data_sources.slice(0, 12)
+        : (techDsMap[obj.id] || []).slice(0, 12);
+
       const t = {
         id,
         name: obj.name,
@@ -124,7 +157,7 @@ function processBundle(bundle) {
           .filter(p => p.kill_chain_name === 'mitre-attack')
           .map(p => p.phase_name),
         platforms: (obj.x_mitre_platforms || []).slice(0, 8),
-        ds: (obj.x_mitre_data_sources || []).slice(0, 12),
+        ds,
         detect: trunc(obj.x_mitre_detection, 400),
         sub: !!(obj.x_mitre_is_subtechnique),
         pid: null,
@@ -158,6 +191,7 @@ function processBundle(bundle) {
     }
   }
 
+  // ── Pass 3: relationships ─────────────────────────────────────────────────
   for (const obj of bundle.objects) {
     if (obj.type !== 'relationship') continue;
 

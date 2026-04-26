@@ -58,14 +58,14 @@ function buildStatement(t, meta) {
 
 function buildDetection(t) {
   if (t.detect) {
-    // Use first sentence of MITRE detection guidance
     const first = t.detect.match(/^[^.!?\n]+[.!?]/);
     return first ? first[0].trim() : t.detect.slice(0, 250);
   }
   if (t.ds.length) {
-    return `Monitor ${t.ds.slice(0, 3).join(', ')} for anomalous activity patterns consistent with ${t.name}.`;
+    const sources = t.ds.slice(0, 5).join('; ');
+    return `Monitor the following data sources for anomalous or unexpected activity: ${sources}.`;
   }
-  return 'No specific detection guidance available from MITRE ATT&CK for this technique.';
+  return `Review process, file, and network telemetry on ${(t.platforms || []).join(', ') || 'target systems'} for indicators consistent with ${t.name}.`;
 }
 
 // Groups technique hypotheses by tactic, preserving tactic order
