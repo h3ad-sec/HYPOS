@@ -1,4 +1,5 @@
 import { generateHypothesis, groupByTactic, TACTIC_META } from './hypothesis.js';
+import { getCurated } from './hyp-db.js';
 
 const $ = id => document.getElementById(id);
 
@@ -175,6 +176,9 @@ function renderActorHeader(actor, techCount, tacticCount) {
 }
 
 function renderCard(h) {
+  const curated = getCurated(h.id);
+  if (curated) return renderCuratedCard(h, curated);
+
   const dsList = h.dataSources.length
     ? h.dataSources.slice(0, 8).map(ds => `<li>${escapeHtml(ds)}</li>`).join('')
     : '<li style="color:var(--muted)">No data sources listed</li>';
@@ -210,6 +214,80 @@ function renderCard(h) {
         <div class="hyp-section-lbl">DETECTION FOCUS</div>
         <div class="hyp-detect-text">${escapeHtml(h.detection)}</div>
       </div>
+    </div>
+    ${footer}
+  </div>`;
+}
+
+function renderCuratedCard(h, curated) {
+  const allTools  = [...new Set(curated.flatMap(c => c.tools  || []))];
+  const allActors = [...new Set(curated.flatMap(c => c.actors || []))];
+  const allRefs   = curated.flatMap(c => c.refs || [])
+    .filter((r, i, a) => a.findIndex(x => x.label === r.label) === i);
+
+  const hypSections = curated.map(c => {
+    const sev = c.severity || 'high';
+    const pivotRows = (c.pivots || []).map(p =>
+      `<div class="hyp-pivot">
+        <span class="hyp-pivot-label">${escapeHtml(p.label)}</span>
+        <span class="hyp-pivot-detail">${escapeHtml(p.detail)}</span>
+      </div>`
+    ).join('');
+
+    return `<div class="hyp-chyp">
+      <div class="hyp-chyp-head">
+        <span class="hyp-chyp-id">${escapeHtml(c.id)}</span>
+        <span class="hyp-chyp-title">${escapeHtml(c.title)}</span>
+        <span class="hyp-chyp-sev ${escapeAttr(sev)}">${sev.toUpperCase()}</span>
+      </div>
+      <div class="hyp-chyp-stmt">${escapeHtml(c.statement)}</div>
+      ${pivotRows ? `<div class="hyp-section-lbl" style="margin-top:6px">HUNT PIVOTS</div><div class="hyp-pivot-list">${pivotRows}</div>` : ''}
+      ${c.fpr ? `<div class="hyp-chyp-fpr"><span class="hyp-section-lbl" style="display:inline;margin-right:6px">FPR</span>${escapeHtml(c.fpr)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const dsList = h.dataSources.length
+    ? h.dataSources.slice(0, 8).map(ds => `<li>${escapeHtml(ds)}</li>`).join('')
+    : '<li style="color:var(--muted)">No data sources listed</li>';
+
+  const platformChips = h.platforms.length
+    ? h.platforms.map(p => `<span class="hyp-platform-chip">${escapeHtml(p)}</span>`).join('')
+    : '<span class="hyp-platform-chip" style="color:var(--muted)">—</span>';
+
+  const toolChips  = allTools.map(t =>
+    `<span class="hyp-tool-chip">${escapeHtml(t)}</span>`).join('');
+  const actorChips = allActors.map(a =>
+    `<span class="hyp-actor-chip" onclick="window.__hypSearch('${escapeAttr(a)}')">${escapeHtml(a)}</span>`).join('');
+
+  const refItems = allRefs.map(r =>
+    `<span class="hyp-ref-item"><span class="hyp-ref-type">${escapeHtml(r.type)}</span>${escapeHtml(r.label)}</span>`
+  ).join('');
+
+  const footer = buildFooter(h);
+
+  return `<div class="hyp-card curated">
+    <div class="hyp-card-head">
+      <span class="hyp-card-id">${escapeHtml(h.id)}</span>
+      <span class="hyp-card-name">${escapeHtml(h.name)}</span>
+      <span class="hyp-curated-badge" style="margin-left:auto">★ CURATED</span>
+      <span class="hyp-tactic-pill" style="background:${escapeAttr(h.tacticColor)};margin-left:0">${escapeHtml(h.tacticLabel)}</span>
+    </div>
+    <div class="hyp-card-body">
+      <div class="hyp-curated-hyps">${hypSections}</div>
+      <div class="hyp-meta-grid">
+        <div>
+          <div class="hyp-section-lbl">DATA SOURCES</div>
+          <ul class="hyp-ds-list">${dsList}</ul>
+        </div>
+        <div>
+          <div class="hyp-section-lbl">PLATFORMS</div>
+          <div class="hyp-platform-chips">${platformChips}</div>
+        </div>
+      </div>
+      ${toolChips  ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${toolChips}</div></div>` : ''}
+      ${actorChips ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>` : ''}
+      ${h.detection ? `<div><div class="hyp-section-lbl">DETECTION FOCUS</div><div class="hyp-detect-text">${escapeHtml(h.detection)}</div></div>` : ''}
+      ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}
     </div>
     ${footer}
   </div>`;

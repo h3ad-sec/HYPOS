@@ -1,4 +1,5 @@
 import { loadData, getData, clearCache } from './data-loader.js';
+import { loadHypDB } from './hyp-db.js';
 import { lookup, suggest, detectQueryType } from './lookup.js';
 import {
   setDataStatus, showLoading, appendTerminalLine, finalizeTerminal,
@@ -108,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initMatrix();
   initNav();
   initSearch();
+  loadHypDB();
   loadATTACK();
 });
 

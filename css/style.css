@@ -856,6 +856,152 @@ body.light .hyp-search-btn { color: #fff; }
 }
 .hyp-mitre-link:hover { color: var(--accent); border-color: var(--accent); }
 
+/* ── Curated hypothesis card ───────────────────────────────── */
+.hyp-card.curated { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.hyp-card.curated:hover { border-color: var(--accent); }
+
+.hyp-curated-badge {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.hyp-curated-hyps { display: flex; flex-direction: column; gap: 14px; }
+
+.hyp-chyp {
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hyp-chyp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hyp-chyp-id {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.hyp-chyp-title {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.hyp-chyp-sev {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.hyp-chyp-sev.critical { background: rgba(255,59,92,0.12); color: var(--red);    border: 1px solid rgba(255,59,92,0.25); }
+.hyp-chyp-sev.high     { background: rgba(255,214,10,0.10); color: var(--yellow); border: 1px solid rgba(255,214,10,0.25); }
+.hyp-chyp-sev.medium   { background: rgba(59,130,246,0.10); color: var(--accent2);border: 1px solid rgba(59,130,246,0.25); }
+
+.hyp-chyp-stmt {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  line-height: 1.6;
+  font-style: italic;
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+
+.hyp-pivot-list { display: flex; flex-direction: column; gap: 6px; }
+
+.hyp-pivot {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 4px 10px;
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  align-items: start;
+}
+
+.hyp-pivot-label {
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--accent2);
+}
+
+.hyp-pivot-detail { color: var(--muted); }
+
+.hyp-chyp-fpr {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  line-height: 1.5;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+.hyp-tool-chips, .hyp-actor-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.hyp-tool-chip {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid rgba(245,158,11,0.35);
+  border-radius: 3px;
+  color: var(--t-exec);
+  letter-spacing: 0.03em;
+}
+
+.hyp-actor-chip {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid rgba(59,130,246,0.35);
+  border-radius: 3px;
+  color: var(--accent2);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: color .12s, border-color .12s;
+}
+.hyp-actor-chip:hover { color: var(--text); border-color: var(--muted); }
+
+.hyp-refs { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.hyp-ref-item {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hyp-ref-type {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: var(--panel2);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+}
+
+@media (max-width: 480px) {
+  .hyp-pivot { grid-template-columns: 1fr; }
+  .hyp-chyp-title { font-size: var(--fs-xs); }
+}
+
 /* ── Filter bar ────────────────────────────────────────────── */
 .hyp-filter-bar {
   display: none;
