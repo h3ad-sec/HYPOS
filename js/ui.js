@@ -102,7 +102,7 @@ function renderTechniqueResults(hypotheses, query, total) {
   let html = `<div class="hyp-results">`;
   html += renderSummaryBar(hypotheses.length, `hypothesis${hypotheses.length !== 1 ? 'es' : ''} for "${escapeHtml(query)}"`, total);
 
-  if (parent) html += renderCard(parent);
+  if (parent) html += `<div class="hyp-tactic-cards">${renderCard(parent)}</div>`;
   if (subs.length) {
     html += `<div class="hyp-tactic-group">`;
     html += `<div class="hyp-tactic-header" onclick="this.closest('.hyp-tactic-group').classList.toggle('collapsed')">

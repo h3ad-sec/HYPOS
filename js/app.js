@@ -265,33 +265,32 @@ function initMatrix() {
 
   const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789T1003T1059T1078INITIALACCESS EXECUTION PERSISTENCE PRIVILEGEESCALATION DEFENSEEVASION CREDENTIALACCESS DISCOVERY LATERALMOVEMENT COLLECTION C2 EXFILTRATION IMPACT HYPOTHESIS HUNT MITRE ATT&CK TTP STIX SIGMA KQL SPL'.split('');
 
-  let color = '#00ff9f';
   let cols, drops;
 
   function resize() {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
-    cols  = Math.floor(canvas.width / 16);
+    cols  = Math.floor(canvas.width / 18);
     drops = Array(cols).fill(1);
   }
 
   function draw() {
     ctx.fillStyle = document.body.classList.contains('light')
-      ? 'rgba(245,247,251,0.05)'
-      : 'rgba(6,8,15,0.05)';
+      ? 'rgba(245,247,251,0.08)'
+      : 'rgba(0,0,0,0.12)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = document.body.classList.contains('light') ? '#0077ff' : '#00ff9f';
-    ctx.font = '14px Share Tech Mono';
+    ctx.font = '13px monospace';
     for (let i = 0; i < drops.length; i++) {
       const c = CHARS[Math.floor(Math.random() * CHARS.length)];
-      ctx.fillText(c, i * 16, drops[i] * 16);
-      if (drops[i] * 16 > canvas.height && Math.random() > 0.975) drops[i] = 0;
+      ctx.fillText(c, i * 18, drops[i] * 18);
+      if (drops[i] * 18 > canvas.height && Math.random() > 0.975) drops[i] = 0;
       drops[i]++;
     }
   }
 
-  window.__matrixSetColor = c => { color = c; };
+  window.__matrixSetColor = c => {};
   resize();
   window.addEventListener('resize', resize);
-  setInterval(draw, 50);
+  setInterval(draw, 45);
 }
