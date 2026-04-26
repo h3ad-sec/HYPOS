@@ -90,6 +90,8 @@ export function renderResults(result) {
 
   if (result.type === 'technique') {
     renderTechniqueResults(hypotheses, result.query, total);
+  } else if (result.type === 'all') {
+    renderAllResults(hypotheses, total);
   } else {
     renderActorResults(result, hypotheses, total);
   }
@@ -129,6 +131,36 @@ function renderActorResults(result, hypotheses, total) {
   for (const { tactic, items } of groups) {
     const meta = TACTIC_META[tactic] || { label: tactic, color: '#7d8fb3' };
     html += `<div class="hyp-tactic-group">`;
+    html += `<div class="hyp-tactic-header" onclick="this.closest('.hyp-tactic-group').classList.toggle('collapsed')">
+      <div class="hyp-tactic-rule"></div>
+      <span class="hyp-tactic-badge" style="background:${escapeAttr(meta.color)}">${escapeHtml(meta.label)}</span>
+      <span class="hyp-tactic-count">${items.length}</span>
+      <span class="hyp-tactic-toggle">▾</span>
+    </div>`;
+    html += `<div class="hyp-tactic-cards">`;
+    for (const h of items) html += renderCard(h);
+    html += `</div></div>`;
+  }
+
+  html += `</div>`;
+  $('hyp-state').innerHTML = html;
+}
+
+function renderAllResults(hypotheses, total) {
+  const groups  = groupByTactic(hypotheses);
+  const tactics = groups.length;
+
+  let html = `<div class="hyp-results">`;
+  html += `<div class="hyp-summary">
+    <div class="hyp-summary-left">
+      <strong>${hypotheses.length}</strong> technique${hypotheses.length !== 1 ? 's' : ''} &nbsp;·&nbsp; ${tactics} tactic${tactics !== 1 ? 's' : ''} &nbsp;·&nbsp; full ATT&amp;CK matrix
+    </div>
+    <div class="hyp-summary-right" style="font-size:var(--fs-xs);color:var(--muted)">click a tactic to expand</div>
+  </div>`;
+
+  for (const { tactic, items } of groups) {
+    const meta = TACTIC_META[tactic] || { label: tactic, color: '#7d8fb3' };
+    html += `<div class="hyp-tactic-group collapsed">`;
     html += `<div class="hyp-tactic-header" onclick="this.closest('.hyp-tactic-group').classList.toggle('collapsed')">
       <div class="hyp-tactic-rule"></div>
       <span class="hyp-tactic-badge" style="background:${escapeAttr(meta.color)}">${escapeHtml(meta.label)}</span>

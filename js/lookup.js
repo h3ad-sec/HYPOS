@@ -88,6 +88,13 @@ function findActorById(data, id) {
   return null;
 }
 
+export function lookupAll() {
+  const data = getData();
+  if (!data) return null;
+  const parents = data.techniques.filter(t => !t.sub);
+  return { type: 'all', items: parents, query: '' };
+}
+
 // Returns up to `limit` suggestions for autocomplete
 export function suggest(query, limit = 12) {
   const index = getIndex();

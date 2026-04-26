@@ -1,6 +1,6 @@
 import { loadData, getData, clearCache } from './data-loader.js';
 import { loadHypDB } from './hyp-db.js';
-import { lookup, suggest, detectQueryType } from './lookup.js';
+import { lookup, lookupAll, suggest, detectQueryType } from './lookup.js';
 import {
   setDataStatus, showLoading, appendTerminalLine, finalizeTerminal,
   showEmpty, showError, renderResults, renderSuggestions, hideAutocomplete,
@@ -130,7 +130,9 @@ async function loadATTACK() {
           runSearch(_pendingQuery);
           _pendingQuery = null;
         } else {
-          showEmpty();
+          const all = lookupAll();
+          if (all) { _lastResult = all; renderResults(applyFilters(all)); }
+          else showEmpty();
         }
       }
     });
