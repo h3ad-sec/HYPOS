@@ -149,7 +149,19 @@
           <span class="hyp-filter-label">CAMPAIGNS</span>
           <div class="hyp-filter-chips" id="campaign-chips"></div>
         </div>
-        <button class="hyp-filter-clear-btn" id="hyp-filter-clear" onclick="window.__clearFilters()">RESET FILTERS</button>
+        <div class="hyp-filter-row-actions">
+          <button class="hyp-cov-toggle-btn" id="hyp-cov-toggle" onclick="window.__toggleCoveragePanel()">◎ COVERAGE</button>
+          <button class="hyp-filter-clear-btn" id="hyp-filter-clear" onclick="window.__clearFilters()">RESET FILTERS</button>
+        </div>
+      </div>
+
+      <div class="hyp-coverage-panel" id="hyp-coverage-panel">
+        <div class="hyp-coverage-hdr">
+          <span class="hyp-coverage-title">◎ DETECTION COVERAGE</span>
+          <span class="hyp-coverage-hint">Select data sources available in your environment — techniques with no match are flagged GAP</span>
+          <button class="hyp-coverage-clear" onclick="window.__clearCoverage()">Clear</button>
+        </div>
+        <div class="hyp-coverage-sources" id="coverage-sources"></div>
       </div>
     </div>
 

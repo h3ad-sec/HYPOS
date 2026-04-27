@@ -259,11 +259,15 @@ function renderAllResults(result, hypotheses, total) {
 
 function renderSummaryBar(count, label, total) {
   const isFiltered = total !== undefined && total !== count;
-  const countHtml  = isFiltered
-    ? `<strong>${count}</strong> of ${total}`
-    : `<strong>${count}</strong>`;
+  const countHtml  = isFiltered ? `<strong>${count}</strong> of ${total}` : `<strong>${count}</strong>`;
   return `<div class="hyp-summary">
     <div class="hyp-summary-left">${countHtml} ${escapeHtml(label)}</div>
+    <div class="hyp-summary-right">
+      <button class="hyp-action-btn" onclick="window.__exportNavigator()" title="Download ATT&CK Navigator layer">Navigator ↓</button>
+      <span class="hyp-action-sep">|</span>
+      <button class="hyp-action-btn" onclick="window.__exportBulk('markdown')" title="Download all as Markdown">MD ↓</button>
+      <button class="hyp-action-btn" onclick="window.__exportBulk('json')" title="Download all as JSON">JSON ↓</button>
+    </div>
   </div>`;
 }
 
@@ -286,6 +290,15 @@ function renderActorHeader(actor, techCount, tacticCount) {
       <div class="actor-stat"><span class="actor-stat-val">${tacticCount}</span><span class="actor-stat-lbl">Tactics</span></div>
     </div>
   </div>`;
+}
+
+function getCoverage(dataSources) {
+  const s = window.__coverageSources;
+  if (!s?.size) return '';
+  const covered = dataSources.some(ds => s.has(ds.split(':')[0].trim()));
+  return covered
+    ? '<span class="hyp-cov-badge ok">◎ COVERED</span>'
+    : '<span class="hyp-cov-badge gap">◉ GAP</span>';
 }
 
 function renderCard(h) {
@@ -324,6 +337,7 @@ function renderCard(h) {
       <span class="hyp-card-id">${escapeHtml(h.id)}</span>
       <span class="hyp-card-name">${escapeHtml(h.name)}</span>
       <span class="hyp-tactic-pill" style="background:${escapeAttr(h.tacticColor)}">${escapeHtml(h.tacticLabel)}</span>
+      ${getCoverage(h.dataSources)}
     </div>
     <div class="hyp-card-body">
       <div>
@@ -440,6 +454,7 @@ function renderCuratedCard(h, curated) {
       <span class="hyp-card-name">${escapeHtml(h.name)}</span>
       <span class="hyp-curated-badge" style="margin-left:auto">★ CURATED</span>
       <span class="hyp-tactic-pill" style="background:${escapeAttr(h.tacticColor)};margin-left:0">${escapeHtml(h.tacticLabel)}</span>
+      ${getCoverage(h.dataSources)}
       <div class="hyp-export-group">
         <button class="hyp-export-btn" onclick="window.__exportHyp('${escapeAttr(h.id)}','markdown',this)">MD</button>
         <button class="hyp-export-btn" onclick="window.__exportHyp('${escapeAttr(h.id)}','json',this)">JSON</button>

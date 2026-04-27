@@ -1,6 +1,7 @@
 import { loadData, getData } from './data-loader.js';
-import { loadHypDB } from './hyp-db.js';
+import { loadHypDB, getCurated } from './hyp-db.js';
 import { lookup, lookupAll, suggest, detectQueryType } from './lookup.js';
+import { TACTIC_META, generateHypothesis, groupByTactic } from './hypothesis.js';
 import {
   setDataStatus, showLoading, appendTerminalLine, finalizeTerminal,
   showEmpty, showError, renderResults, renderSuggestions, hideAutocomplete,
@@ -17,6 +18,155 @@ let _lastResult   = null;
 const _activePlatforms = new Set();
 const _activeSources   = new Set();
 const _activeActors    = new Set();
+const _mySources       = new Set();
+window.__coverageSources = _mySources;
+
+function download(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+window.__exportNavigator = function() {
+  if (!_lastResult?.items?.length) return;
+  const date  = new Date().toISOString().split('T')[0];
+  const actor = _lastResult.actor;
+  const techniques = _lastResult.items.map(t => {
+    const tactic    = t.tactics?.[0] || '';
+    const meta      = TACTIC_META[tactic] || { color: '#3b82f6' };
+    const isCurated = !!getCurated(t.id);
+    return {
+      techniqueID:       t.id,
+      tactic:            tactic || undefined,
+      color:             isCurated ? '#00ff9f' : meta.color,
+      score:             100,
+      comment:           isCurated ? 'Curated hypothesis in HYPOS' : 'Hunt hypothesis in HYPOS',
+      enabled:           true,
+      metadata:          [],
+      links:             [{ label: 'HYPOS', url: `https://h3ad-sec.github.io/HYPOS/?q=${t.id}` }],
+      showSubtechniques: (t.subs || []).length > 0,
+    };
+  });
+  const layer = {
+    name:        actor ? `${actor.name} — HYPOS` : 'HYPOS Hunt Layer',
+    versions:    { attack: '14', navigator: '4.9', layer: '4.5' },
+    domain:      'enterprise-attack',
+    description: `Exported from HYPOS by H3AD-SEC · ${date}${actor ? ` · ${actor.name} (${actor.id})` : ''} · ${_lastResult.items.length} techniques`,
+    filters:     { platforms: [] },
+    sorting:     3,
+    layout:      { layout: 'side', aggregateFunction: 'average', showID: true, showName: true, showAggregateScores: false, countUnscored: false },
+    hideDisabled: false,
+    techniques,
+    gradient:    { colors: ['#ff6666', '#ffe766', '#8ec843'], minValue: 0, maxValue: 100 },
+    legendItems: [
+      { label: 'Curated Hypothesis', color: '#00ff9f' },
+      { label: 'Hunt Technique',     color: '#3b82f6' },
+    ],
+    metadata: [], links: [],
+    showTacticRowBackground: false, tacticRowBackground: '#dddddd',
+    selectTechniquesAcrossTactics: false, selectSubtechniquesWithParent: false,
+  };
+  download(
+    actor ? `hypos-${actor.id}-navigator-${date}.json` : `hypos-navigator-${date}.json`,
+    JSON.stringify(layer, null, 2),
+    'application/json'
+  );
+};
+
+window.__exportBulk = function(format) {
+  if (!_lastResult?.items?.length) return;
+  const items = _lastResult.items;
+  const actor = _lastResult.actor;
+  const date  = new Date().toISOString().split('T')[0];
+  const slug  = actor ? actor.id : 'export';
+
+  if (format === 'json') {
+    const out = {
+      exported: date,
+      source:   'HYPOS by H3AD-SEC · https://h3ad-sec.github.io/HYPOS/',
+      actor:    actor ? { id: actor.id, name: actor.name, type: actor.type } : null,
+      techniques: items.map(t => {
+        const h = generateHypothesis(t);
+        return {
+          id: t.id, name: t.name, tactic: h.tactic, tacticLabel: h.tacticLabel,
+          platforms: h.platforms, hypothesis: h.hypothesis, dataSources: h.dataSources,
+          detection: h.detection, mits: h.mits, url: h.url,
+          curated: getCurated(t.id) || null,
+        };
+      }),
+    };
+    download(`hypos-${slug}-${date}.json`, JSON.stringify(out, null, 2), 'application/json');
+    return;
+  }
+
+  const title = actor ? `${actor.name} (${actor.id}) — Hunt Package` : 'Hunt Hypothesis Package';
+  const lines = [
+    `# ${title}`,
+    `> [HYPOS](https://h3ad-sec.github.io/HYPOS/) by H3AD-SEC · ${date} · ${items.length} techniques`,
+    '',
+  ];
+  for (const { tactic, items: hyps } of groupByTactic(items.map(t => generateHypothesis(t)))) {
+    const meta = TACTIC_META[tactic] || { label: tactic };
+    lines.push(`## ${meta.label.toUpperCase()}`, '');
+    for (const h of hyps) {
+      lines.push(`### ${h.id} · ${h.name}`);
+      lines.push(`**Platforms:** ${h.platforms.join(', ') || '—'} · **ATT&CK:** ${h.url || '—'}`, '');
+      lines.push('**Hypothesis:**', h.hypothesis, '');
+      if (h.dataSources.length) {
+        lines.push('**Data Sources:**');
+        h.dataSources.forEach(ds => lines.push(`- ${ds}`));
+        lines.push('');
+      }
+      lines.push('**Detection:**', h.detection || '—', '');
+      if (h.mits?.length) {
+        lines.push('**Mitigations:**');
+        h.mits.forEach(m => lines.push(`- [${m.id}](https://attack.mitre.org/mitigations/${m.id}/) — ${m.name}`));
+        lines.push('');
+      }
+      const curated = getCurated(h.id);
+      if (curated?.length) {
+        lines.push('**Curated Hypotheses:**');
+        for (const c of curated) {
+          lines.push(`\n#### ${c.id} · ${c.title} *(${(c.severity || 'high').toUpperCase()})*`);
+          lines.push(c.statement, '');
+          if (c.pivots?.length) {
+            c.pivots.forEach(p => lines.push(`- **${p.label}:** ${p.detail}`));
+            lines.push('');
+          }
+          if (c.detection_logic?.query_hint) {
+            lines.push('```', c.detection_logic.query_hint, '```', '');
+            if (c.detection_logic.sigma_url) lines.push(`Sigma: ${c.detection_logic.sigma_url}`, '');
+          }
+        }
+      }
+      lines.push('---', '');
+    }
+  }
+  download(`hypos-${slug}-${date}.md`, lines.join('\n'), 'text/markdown');
+};
+
+window.__toggleCovSource = function(src) {
+  _mySources.has(src) ? _mySources.delete(src) : _mySources.add(src);
+  document.querySelectorAll('.hyp-cov-src-chip').forEach(el =>
+    el.classList.toggle('active', _mySources.has(el.dataset.src)));
+  document.getElementById('hyp-cov-toggle')?.classList.toggle('active', _mySources.size > 0);
+  if (_lastResult) renderResults(applyFilters(_lastResult));
+};
+
+window.__clearCoverage = function() {
+  _mySources.clear();
+  document.querySelectorAll('.hyp-cov-src-chip').forEach(el => el.classList.remove('active'));
+  document.getElementById('hyp-cov-toggle')?.classList.remove('active');
+  if (_lastResult) renderResults(applyFilters(_lastResult));
+};
+
+window.__toggleCoveragePanel = function() {
+  document.getElementById('hyp-coverage-panel')?.classList.toggle('open');
+};
 
 function applyFilters(result) {
   if (!result || result.type === 'not-found') return result;
@@ -222,6 +372,21 @@ function initFilters(data) {
   initActorRow('malware-chips',  sortedMalware);
   initActorRow('tool-chips',     sortedTools);
   initActorRow('campaign-chips', sortedCampaigns);
+
+  const srcFreq = new Map();
+  for (const t of data.techniques) {
+    for (const ds of t.ds) {
+      const src = ds.split(':')[0].trim();
+      srcFreq.set(src, (srcFreq.get(src) || 0) + 1);
+    }
+  }
+  const covSources = [...srcFreq.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
+  const covEl = document.getElementById('coverage-sources');
+  if (covEl) {
+    covEl.innerHTML = covSources.map(s =>
+      `<span class="hyp-cov-src-chip" data-src="${s}" onclick="window.__toggleCovSource('${s}')">${s}</span>`
+    ).join('');
+  }
 
   document.getElementById('hyp-filter-bar')?.classList.add('ready');
 }
