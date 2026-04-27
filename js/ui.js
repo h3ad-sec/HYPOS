@@ -1,5 +1,5 @@
 import { generateHypothesis, groupByTactic, TACTIC_META } from './hypothesis.js';
-import { getCurated, getRelated } from './hyp-db.js';
+import { getCurated, getRelated, getCuratedStats } from './hyp-db.js';
 import { getData } from './data-loader.js';
 
 let _techNameCache = null;
@@ -203,8 +203,9 @@ function renderActorResults(result, hypotheses, total) {
 
 function renderAllResults(result, hypotheses, total) {
   const groups = groupByTactic(hypotheses);
-  const curatedTechCount = hypotheses.filter(h => !!getCurated(h.id)).length;
-  const curatedHypCount  = hypotheses.reduce((n, h) => n + (getCurated(h.id)?.length || 0), 0);
+  const curatedStats    = getCuratedStats();
+  const curatedTechCount = curatedStats.techniques;
+  const curatedHypCount  = curatedStats.hypotheses;
   const s = result._stats || {};
 
   let html = `<div class="hyp-matrix-wrap">`;

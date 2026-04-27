@@ -45,6 +45,13 @@ export function getCurated(techniqueId) {
   return _db?.techniques?.[techniqueId]?.hypotheses || null;
 }
 
+export function getCuratedStats() {
+  const techniques = Object.keys(_db?.techniques || {}).length;
+  const hypotheses = Object.values(_db?.techniques || {})
+    .reduce((n, e) => n + (e.hypotheses?.length || 0), 0);
+  return { techniques, hypotheses };
+}
+
 export function getRelated(techniqueId) {
   return _relatedMap?.[techniqueId] || [];
 }
