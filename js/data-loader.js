@@ -59,7 +59,7 @@ export async function loadData(onProgress) {
 export function getData()    { return _data;  }
 export function getIndex()   { return _index; }
 export function getUsedBy(techId) {
-  return _index?.techUsedBy?.[techId] || { groups: [], malware: [], tools: [] };
+  return _index?.techUsedBy?.[techId] || { groups: [], malware: [], tools: [], campaigns: [] };
 }
 
 function getMitreId(obj) {
@@ -241,14 +241,15 @@ function buildIndex(data) {
   const addUsedBy = (list, field) => {
     for (const a of list) {
       for (const tid of a.techs) {
-        if (!techUsedBy[tid]) techUsedBy[tid] = { groups: [], malware: [], tools: [] };
+        if (!techUsedBy[tid]) techUsedBy[tid] = { groups: [], malware: [], tools: [], campaigns: [] };
         techUsedBy[tid][field].push({ id: a.id, name: a.name });
       }
     }
   };
-  addUsedBy(data.groups,  'groups');
-  addUsedBy(data.malware, 'malware');
-  addUsedBy(data.tools,   'tools');
+  addUsedBy(data.groups,    'groups');
+  addUsedBy(data.malware,   'malware');
+  addUsedBy(data.tools,     'tools');
+  addUsedBy(data.campaigns, 'campaigns');
 
   const entries = [];
 

@@ -302,7 +302,7 @@ function renderCard(h) {
 
   const footer           = buildFooter(h);
   const dsComponentChips = buildDsComponentChips(h.dataSources, h.analytics);
-  const analyticsHtml    = buildAnalyticsSection(h.dataSources, h.analytics);
+  const analyticsHtml    = buildAnalyticsSection(h.dataSources, h.analytics, h.detection);
 
   const usedBy = getUsedBy(h.id);
   const CAP = 12;
@@ -315,6 +315,9 @@ function renderCard(h) {
   const stixToolChips = usedBy.tools.slice(0, CAP).map(a =>
     `<span class="hyp-tool-chip" onclick="window.__hypSearch('${escapeAttr(a.name)}')">${escapeHtml(a.name)}</span>`
   ).join('') + (usedBy.tools.length > CAP ? `<span class="hyp-tool-chip" style="opacity:.55">+${usedBy.tools.length - CAP} more</span>` : '');
+  const campaignChips = (usedBy.campaigns || []).slice(0, CAP).map(a =>
+    `<span class="hyp-actor-chip" onclick="window.__hypSearch('${escapeAttr(a.name)}')">${escapeHtml(a.name)}</span>`
+  ).join('') + (usedBy.campaigns && usedBy.campaigns.length > CAP ? `<span class="hyp-actor-chip" style="opacity:.55">+${usedBy.campaigns.length - CAP} more</span>` : '');
 
   return `<div class="hyp-card">
     <div class="hyp-card-head">
@@ -334,15 +337,12 @@ function renderCard(h) {
           <div class="hyp-platform-chips">${platformChips}</div>
         </div>
       </div>
-      ${groupChips   ? `<div><div class="hyp-section-lbl">KNOWN GROUPS</div><div class="hyp-actor-chips">${groupChips}</div></div>`   : ''}
-      ${malwareChips ? `<div><div class="hyp-section-lbl">KNOWN MALWARE</div><div class="hyp-actor-chips">${malwareChips}</div></div>` : ''}
-      ${stixToolChips ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${stixToolChips}</div></div>` : ''}
-      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<span class="hyp-mitigation-chip" title="${escapeAttr(m.id)}"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</span>`).join('')}</div></div>` : ''}
+      ${groupChips    ? `<div><div class="hyp-section-lbl">KNOWN GROUPS</div><div class="hyp-actor-chips">${groupChips}</div></div>`    : ''}
+      ${malwareChips  ? `<div><div class="hyp-section-lbl">KNOWN MALWARE</div><div class="hyp-actor-chips">${malwareChips}</div></div>`  : ''}
+      ${stixToolChips ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${stixToolChips}</div></div>`    : ''}
+      ${campaignChips ? `<div><div class="hyp-section-lbl">KNOWN CAMPAIGNS</div><div class="hyp-actor-chips">${campaignChips}</div></div>` : ''}
+      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
       ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
-      <div>
-        <div class="hyp-section-lbl">DETECTION FOCUS</div>
-        <div class="hyp-detect-text">${escapeHtml(h.detection)}</div>
-      </div>
     </div>
     ${footer}
   </div>`;
@@ -375,9 +375,9 @@ function renderCuratedCard(h, curated) {
       : '';
 
     const mitigationChips = (c.mitigations || []).map(m =>
-      `<span class="hyp-mitigation-chip" title="${escapeAttr(m.detail)}">
+      `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.detail)}">
         <span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}
-      </span>`
+      </a>`
     ).join('');
 
     const SEV_TIP = {
@@ -423,7 +423,12 @@ function renderCuratedCard(h, curated) {
   const footer = buildFooter(h);
 
   const dsComponentChips = buildDsComponentChips(h.dataSources, h.analytics);
-  const analyticsHtml    = buildAnalyticsSection(h.dataSources, h.analytics);
+  const analyticsHtml    = buildAnalyticsSection(h.dataSources, h.analytics, h.detection);
+  const usedBy           = getUsedBy(h.id);
+  const CAP_C = 8;
+  const stixCampaignChips = (usedBy.campaigns || []).slice(0, CAP_C).map(a =>
+    `<span class="hyp-actor-chip" onclick="window.__hypSearch('${escapeAttr(a.name)}')">${escapeHtml(a.name)}</span>`
+  ).join('') + (usedBy.campaigns && usedBy.campaigns.length > CAP_C ? `<span class="hyp-actor-chip" style="opacity:.55">+${usedBy.campaigns.length - CAP_C} more</span>` : '');
   const related = getRelated(h.id).slice(0, 6);
   const relatedChips = related.map(id =>
     `<span class="hyp-related-chip" onclick="window.__hypSearch('${escapeAttr(id)}')" title="${escapeAttr(getTechName(id))}">${escapeHtml(id)}</span>`
@@ -449,11 +454,11 @@ function renderCuratedCard(h, curated) {
           <div class="hyp-platform-chips">${platformChips}</div>
         </div>
       </div>
-      ${toolChips  ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${toolChips}</div></div>` : ''}
-      ${actorChips ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>` : ''}
-      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<span class="hyp-mitigation-chip" title="${escapeAttr(m.id)}"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</span>`).join('')}</div></div>` : ''}
-      ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
-      ${h.detection ? `<div><div class="hyp-section-lbl">DETECTION FOCUS</div><div class="hyp-detect-text">${escapeHtml(h.detection)}</div></div>` : ''}
+      ${toolChips          ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${toolChips}</div></div>`                   : ''}
+      ${actorChips         ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>`              : ''}
+      ${stixCampaignChips  ? `<div><div class="hyp-section-lbl">KNOWN CAMPAIGNS</div><div class="hyp-actor-chips">${stixCampaignChips}</div></div>`         : ''}
+      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
+      ${analyticsHtml      ? `<div>${analyticsHtml}</div>`                                                                                                  : ''}
       ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}
       ${relatedChips ? `<div><div class="hyp-section-lbl">RELATED TECHNIQUES</div><div class="hyp-related-chips">${relatedChips}</div></div>` : ''}
     </div>
@@ -550,23 +555,33 @@ function buildDsComponentChips(dataSources, analytics) {
   }).join('');
 }
 
-function buildAnalyticsSection(dataSources, analytics) {
-  if (!analytics || !dataSources || !dataSources.length) return '';
-  const entries = dataSources
-    .filter(ds => analytics[ds])
-    .map(ds => {
+function buildAnalyticsSection(dataSources, analytics, detect) {
+  const entries = [];
+  if (analytics && dataSources && dataSources.length) {
+    dataSources.filter(ds => analytics[ds]).forEach(ds => {
       const parts     = ds.split(':');
       const source    = parts[0].trim();
       const component = parts[1]?.trim() || source;
-      return `<div class="hyp-analytic-item">
+      entries.push(`<div class="hyp-analytic-item">
         <div class="hyp-analytic-label">
           <span class="hyp-analytic-source">${escapeHtml(source)}</span>
           <span class="hyp-analytic-arrow">›</span>
           <span class="hyp-analytic-component">${escapeHtml(component)}</span>
         </div>
         <div class="hyp-analytic-text">${escapeHtml(analytics[ds])}</div>
-      </div>`;
+      </div>`);
     });
+  }
+  if (!entries.length && detect) {
+    entries.push(`<div class="hyp-analytic-item">
+      <div class="hyp-analytic-label">
+        <span class="hyp-analytic-source">ATT&amp;CK</span>
+        <span class="hyp-analytic-arrow">›</span>
+        <span class="hyp-analytic-component">Detection Guidance</span>
+      </div>
+      <div class="hyp-analytic-text">${escapeHtml(detect)}</div>
+    </div>`);
+  }
   if (!entries.length) return '';
   return `<div class="hyp-section-lbl">DETECTION ANALYTICS <span class="hyp-section-src">MITRE ATT&amp;CK</span></div>
     <div class="hyp-analytics-list">${entries.join('')}</div>`;

@@ -16,14 +16,25 @@ let _lastResult   = null;
 
 const _activePlatforms = new Set();
 const _activeSources   = new Set();
+const _activeActors    = new Set();
 
 function applyFilters(result) {
   if (!result || result.type === 'not-found') return result;
-  if (!_activePlatforms.size && !_activeSources.size) return result;
+  if (!_activePlatforms.size && !_activeSources.size && !_activeActors.size) return result;
+
+  let actorTechSet = null;
+  if (_activeActors.size) {
+    const d = getData();
+    actorTechSet = new Set();
+    for (const a of [...d.groups, ...d.malware, ...d.tools, ...d.campaigns]) {
+      if (_activeActors.has(a.id)) for (const tid of a.techs) actorTechSet.add(tid);
+    }
+  }
 
   const items = result.items.filter(t => {
     if (_activePlatforms.size && !t.platforms.some(p => _activePlatforms.has(p))) return false;
     if (_activeSources.size  && !t.ds.some(ds => _activeSources.has(ds.split(':')[0].trim()))) return false;
+    if (actorTechSet && !actorTechSet.has(t.id)) return false;
     return true;
   });
   return { ...result, items, _total: result.items.length };
@@ -34,7 +45,9 @@ function syncFilterUI() {
     el.classList.toggle('active', _activePlatforms.has(el.dataset.plat)));
   document.querySelectorAll('.hyp-fchip[data-src]').forEach(el =>
     el.classList.toggle('active', _activeSources.has(el.dataset.src)));
-  const anyActive = _activePlatforms.size > 0 || _activeSources.size > 0;
+  document.querySelectorAll('.hyp-fchip[data-actor]').forEach(el =>
+    el.classList.toggle('active', _activeActors.has(el.dataset.actor)));
+  const anyActive = _activePlatforms.size > 0 || _activeSources.size > 0 || _activeActors.size > 0;
   document.getElementById('hyp-filter-clear')?.classList.toggle('visible', anyActive);
 }
 
@@ -54,9 +67,16 @@ window.__toggleSource = s => {
   rerender();
 };
 
+window.__toggleActor = id => {
+  _activeActors.has(id) ? _activeActors.delete(id) : _activeActors.add(id);
+  syncFilterUI();
+  rerender();
+};
+
 window.__clearFilters = () => {
   _activePlatforms.clear();
   _activeSources.clear();
+  _activeActors.clear();
   syncFilterUI();
   rerender();
 };
@@ -99,6 +119,25 @@ function initFilters(data) {
       srcEl.closest('.hyp-filter-row')?.remove();
     }
   }
+
+  const TOP = 14;
+  const topGroups    = [...data.groups]   .sort((a, b) => b.techs.length - a.techs.length).slice(0, TOP);
+  const topMalware   = [...data.malware]  .sort((a, b) => b.techs.length - a.techs.length).slice(0, TOP);
+  const topTools     = [...data.tools]    .sort((a, b) => b.techs.length - a.techs.length).slice(0, TOP);
+  const topCampaigns = [...data.campaigns].sort((a, b) => b.techs.length - a.techs.length).slice(0, TOP);
+
+  const makeActorChip = a =>
+    `<span class="hyp-fchip" data-actor="${a.id}" onclick="window.__toggleActor('${a.id}')">${a.name}</span>`;
+
+  const groupEl    = document.getElementById('group-chips');
+  const malwareEl  = document.getElementById('malware-chips');
+  const toolEl     = document.getElementById('tool-chips');
+  const campaignEl = document.getElementById('campaign-chips');
+
+  if (groupEl)    topGroups.length    ? (groupEl.innerHTML    = topGroups.map(makeActorChip).join(''))    : groupEl.closest('.hyp-filter-row')?.remove();
+  if (malwareEl)  topMalware.length   ? (malwareEl.innerHTML  = topMalware.map(makeActorChip).join(''))  : malwareEl.closest('.hyp-filter-row')?.remove();
+  if (toolEl)     topTools.length     ? (toolEl.innerHTML     = topTools.map(makeActorChip).join(''))     : toolEl.closest('.hyp-filter-row')?.remove();
+  if (campaignEl) topCampaigns.length ? (campaignEl.innerHTML = topCampaigns.map(makeActorChip).join('')) : campaignEl.closest('.hyp-filter-row')?.remove();
 
   document.getElementById('hyp-filter-bar')?.classList.add('ready');
 }
