@@ -302,8 +302,9 @@ function renderCard(h) {
     ? h.platforms.map(p => `<span class="hyp-platform-chip">${escapeHtml(p)}</span>`).join('')
     : '<span class="hyp-platform-chip" style="color:var(--muted)">—</span>';
 
-  const footer = buildFooter(h);
-  const dsComponentChips = buildDsComponentChips(h.dataSources);
+  const footer           = buildFooter(h);
+  const dsComponentChips = buildDsComponentChips(h.dataSources, h.analytics);
+  const analyticsHtml    = buildAnalyticsSection(h.dataSources, h.analytics);
 
   return `<div class="hyp-card">
     <div class="hyp-card-head">
@@ -323,6 +324,7 @@ function renderCard(h) {
           <div class="hyp-platform-chips">${platformChips}</div>
         </div>
       </div>
+      ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
       <div>
         <div class="hyp-section-lbl">DETECTION FOCUS</div>
         <div class="hyp-detect-text">${escapeHtml(h.detection)}</div>
@@ -406,7 +408,8 @@ function renderCuratedCard(h, curated) {
 
   const footer = buildFooter(h);
 
-  const dsComponentChips = buildDsComponentChips(h.dataSources);
+  const dsComponentChips = buildDsComponentChips(h.dataSources, h.analytics);
+  const analyticsHtml    = buildAnalyticsSection(h.dataSources, h.analytics);
   const related = getRelated(h.id).slice(0, 6);
   const relatedChips = related.map(id =>
     `<span class="hyp-related-chip" onclick="window.__hypSearch('${escapeAttr(id)}')" title="${escapeAttr(getTechName(id))}">${escapeHtml(id)}</span>`
@@ -434,6 +437,7 @@ function renderCuratedCard(h, curated) {
       </div>
       ${toolChips  ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${toolChips}</div></div>` : ''}
       ${actorChips ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>` : ''}
+      ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
       ${h.detection ? `<div><div class="hyp-section-lbl">DETECTION FOCUS</div><div class="hyp-detect-text">${escapeHtml(h.detection)}</div></div>` : ''}
       ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}
       ${relatedChips ? `<div><div class="hyp-section-lbl">RELATED TECHNIQUES</div><div class="hyp-related-chips">${relatedChips}</div></div>` : ''}
@@ -524,14 +528,37 @@ export function updateDetectBadge(query) {
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function buildDsComponentChips(dataSources) {
+function buildDsComponentChips(dataSources, analytics) {
   if (!dataSources || !dataSources.length) return '';
   return dataSources.slice(0, 10).map(ds => {
     const parts     = ds.split(':');
     const source    = parts[0].trim();
     const component = parts[1]?.trim() || source;
-    return `<span class="hyp-ds-chip" onclick="window.__toggleSource('${escapeAttr(source)}')" title="Filter by: ${escapeAttr(source)}">${escapeHtml(component)}</span>`;
+    const hasAnalytic = analytics && analytics[ds];
+    return `<span class="hyp-ds-chip${hasAnalytic ? ' has-analytic' : ''}" onclick="window.__toggleSource('${escapeAttr(source)}')" title="Filter by: ${escapeAttr(source)}">${escapeHtml(component)}</span>`;
   }).join('');
+}
+
+function buildAnalyticsSection(dataSources, analytics) {
+  if (!analytics || !dataSources || !dataSources.length) return '';
+  const entries = dataSources
+    .filter(ds => analytics[ds])
+    .map(ds => {
+      const parts     = ds.split(':');
+      const source    = parts[0].trim();
+      const component = parts[1]?.trim() || source;
+      return `<div class="hyp-analytic-item">
+        <div class="hyp-analytic-label">
+          <span class="hyp-analytic-source">${escapeHtml(source)}</span>
+          <span class="hyp-analytic-arrow">›</span>
+          <span class="hyp-analytic-component">${escapeHtml(component)}</span>
+        </div>
+        <div class="hyp-analytic-text">${escapeHtml(analytics[ds])}</div>
+      </div>`;
+    });
+  if (!entries.length) return '';
+  return `<div class="hyp-section-lbl">DETECTION ANALYTICS <span class="hyp-section-src">MITRE ATT&amp;CK</span></div>
+    <div class="hyp-analytics-list">${entries.join('')}</div>`;
 }
 
 function renderTerminal(lines) {

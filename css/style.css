@@ -801,6 +801,64 @@ body.light .hyp-search-btn { color: #fff; }
 }
 .hyp-related-chip:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ── Section label source badge ─────────────────────────────── */
+.hyp-section-src {
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ── Detection Analytics (from MITRE) ───────────────────────── */
+.hyp-analytics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.hyp-analytic-item {
+  padding: 8px 12px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+}
+.hyp-analytic-item:last-child { border-bottom: none; }
+.hyp-analytic-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.hyp-analytic-source {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--accent2);
+  text-transform: uppercase;
+}
+.hyp-analytic-arrow { font-size: 10px; color: var(--border); }
+.hyp-analytic-component {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text);
+}
+.hyp-analytic-text {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/* Data component chip glow when analytic available */
+.hyp-ds-chip.has-analytic { border-color: color-mix(in srgb, var(--accent2) 40%, transparent); color: var(--accent2); }
+
 /* ── Detection Logic block ──────────────────────────────────── */
 .hyp-detect-logic {
   display: flex;

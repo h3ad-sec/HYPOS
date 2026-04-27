@@ -96,6 +96,7 @@ export function generateHypothesis(technique) {
     tacticColor: tacticMeta.color,
     hypothesis,
     dataSources: technique.ds || [],
+    analytics:   technique.analytics || {},
     platforms:   technique.platforms || [],
     detection,
     isSub:       technique.sub,
