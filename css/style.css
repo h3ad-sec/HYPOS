@@ -551,12 +551,30 @@ body.light .hyp-search-btn { color: #fff; }
 .hyp-matrix-stats {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: 'Share Tech Mono', monospace;
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  gap: 14px;
+  flex-wrap: wrap;
 }
-.hyp-matrix-stats strong { color: var(--text); }
+.hyp-matrix-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.hyp-matrix-stat-val {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--fs-md);
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1;
+}
+.hyp-matrix-stat-lbl {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.hyp-matrix-stat-item.accent .hyp-matrix-stat-val { color: var(--accent); }
 .hyp-matrix-sep { color: var(--border); }
 
 .hyp-matrix-legend {
@@ -660,9 +678,94 @@ body.light .hyp-search-btn { color: #fff; }
   color: var(--accent);
   margin-left: auto;
 }
+.hyp-matrix-cell-ds {
+  font-size: 8px;
+  color: var(--muted);
+  background: var(--panel2);
+  padding: 0 3px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 @media (max-width: 768px) {
   .hyp-matrix-wrap { padding: 0 12px; }
+}
+
+/* ── Detection Logic block ──────────────────────────────────── */
+.hyp-detect-logic {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+.hyp-detect-sigma-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--accent2);
+  text-decoration: none;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent2) 30%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent2) 5%, transparent);
+  width: fit-content;
+  transition: border-color .12s, background .12s;
+}
+.hyp-detect-sigma-link:hover {
+  border-color: var(--accent2);
+  background: color-mix(in srgb, var(--accent2) 12%, transparent);
+}
+.hyp-detect-query {
+  display: block;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text);
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+body.light .hyp-detect-query { border-left-color: var(--accent); }
+
+/* ── Mitigations chips ──────────────────────────────────────── */
+.hyp-mitigation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.hyp-mitigation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 3px 9px 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel2);
+  color: var(--text);
+  cursor: default;
+  transition: border-color .12s;
+}
+.hyp-mitigation-chip:hover { border-color: var(--muted); }
+.hyp-mitigation-id {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  padding: 1px 5px;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
 }
 
 

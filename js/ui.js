@@ -91,7 +91,7 @@ export function renderResults(result) {
   if (result.type === 'technique') {
     renderTechniqueResults(hypotheses, result.query, total);
   } else if (result.type === 'all') {
-    renderAllResults(hypotheses, total);
+    renderAllResults(result, hypotheses, total);
   } else {
     renderActorResults(result, hypotheses, total);
   }
@@ -146,19 +146,22 @@ function renderActorResults(result, hypotheses, total) {
   $('hyp-state').innerHTML = html;
 }
 
-function renderAllResults(hypotheses, total) {
+function renderAllResults(result, hypotheses, total) {
   const groups = groupByTactic(hypotheses);
   const curatedCount = hypotheses.filter(h => !!getCurated(h.id)).length;
+  const s = result._stats || {};
 
   let html = `<div class="hyp-matrix-wrap">`;
 
   html += `<div class="hyp-matrix-bar">
     <div class="hyp-matrix-stats">
-      <strong>${hypotheses.length}</strong> techniques
-      <span class="hyp-matrix-sep">·</span>
-      <strong>${groups.length}</strong> tactics
-      <span class="hyp-matrix-sep">·</span>
-      <strong style="color:var(--accent)">${curatedCount}</strong> curated
+      <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.techniques || hypotheses.length}</span><span class="hyp-matrix-stat-lbl">Techniques</span></span>
+      <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.subTechniques || '—'}</span><span class="hyp-matrix-stat-lbl">Sub-techniques</span></span>
+      <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${groups.length}</span><span class="hyp-matrix-stat-lbl">Tactics</span></span>
+      <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.groups || '—'}</span><span class="hyp-matrix-stat-lbl">Groups</span></span>
+      <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.campaigns || '—'}</span><span class="hyp-matrix-stat-lbl">Campaigns</span></span>
+      <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.software || '—'}</span><span class="hyp-matrix-stat-lbl">Software</span></span>
+      <span class="hyp-matrix-stat-item accent"><span class="hyp-matrix-stat-val">${curatedCount}</span><span class="hyp-matrix-stat-lbl">Curated</span></span>
     </div>
     <div class="hyp-matrix-legend">
       <span class="hyp-matrix-legend-item"><span class="hyp-matrix-legend-dot curated"></span>Curated hypothesis</span>
@@ -178,11 +181,15 @@ function renderAllResults(hypotheses, total) {
     for (const h of items) {
       const hasCurated = !!getCurated(h.id);
       const subsCount  = h.subs.length;
+      const primaryDs  = h.dataSources.length
+        ? h.dataSources[0].split(':')[0].trim()
+        : '';
       html += `<div class="hyp-matrix-cell${hasCurated ? ' curated' : ''}" onclick="window.__hypSearch('${escapeAttr(h.id)}')">
         <div class="hyp-matrix-cell-name">${escapeHtml(h.name)}</div>
         <div class="hyp-matrix-cell-meta">
           <span class="hyp-matrix-cell-id">${escapeHtml(h.id)}</span>
           ${subsCount ? `<span class="hyp-matrix-cell-subs">+${subsCount}</span>` : ''}
+          ${primaryDs ? `<span class="hyp-matrix-cell-ds" title="${escapeAttr(h.dataSources.join(', '))}">${escapeHtml(primaryDs)}</span>` : ''}
           ${hasCurated ? `<span class="hyp-matrix-cell-star">★</span>` : ''}
         </div>
       </div>`;
@@ -281,6 +288,23 @@ function renderCuratedCard(h, curated) {
       </div>`
     ).join('');
 
+    const dl = c.detection_logic;
+    const detectionLogicHtml = dl
+      ? `<div class="hyp-section-lbl" style="margin-top:8px">DETECTION LOGIC</div>
+         <div class="hyp-detect-logic">
+           ${dl.sigma_url
+             ? `<a class="hyp-detect-sigma-link" href="${escapeAttr(dl.sigma_url)}" target="_blank" rel="noopener">⬡ Sigma: ${escapeHtml(dl.sigma_title || 'rule')}</a>`
+             : ''}
+           ${dl.query_hint ? `<code class="hyp-detect-query">${escapeHtml(dl.query_hint)}</code>` : ''}
+         </div>`
+      : '';
+
+    const mitigationChips = (c.mitigations || []).map(m =>
+      `<span class="hyp-mitigation-chip" title="${escapeAttr(m.detail)}">
+        <span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}
+      </span>`
+    ).join('');
+
     return `<div class="hyp-chyp">
       <div class="hyp-chyp-head">
         <span class="hyp-chyp-id">${escapeHtml(c.id)}</span>
@@ -289,6 +313,8 @@ function renderCuratedCard(h, curated) {
       </div>
       <div class="hyp-chyp-stmt">${escapeHtml(c.statement)}</div>
       ${pivotRows ? `<div class="hyp-section-lbl" style="margin-top:6px">HUNT PIVOTS</div><div class="hyp-pivot-list">${pivotRows}</div>` : ''}
+      ${detectionLogicHtml}
+      ${mitigationChips ? `<div class="hyp-section-lbl" style="margin-top:8px">MITIGATIONS</div><div class="hyp-mitigation-chips">${mitigationChips}</div>` : ''}
       ${c.fpr ? `<div class="hyp-chyp-fpr"><span class="hyp-section-lbl" style="display:inline;margin-right:6px">FPR</span>${escapeHtml(c.fpr)}</div>` : ''}
     </div>`;
   }).join('<hr class="hyp-chyp-divider">');

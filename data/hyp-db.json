@@ -78,6 +78,614 @@
             { "label": "CISA AA23-075A", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" }
           ],
           "fpr": "WerFault.exe and WerFaultSecure.exe legitimately create LSASS-related crash dumps — exclude those processes. Developer crash dump sessions may produce .dmp files in custom paths; correlate with active debugging sessions."
+        },
+        {
+          "id": "HYP-T1003.001-005",
+          "title": "BYOVD / PPL Bypass Driver Load Before LSASS Access",
+          "severity": "critical",
+          "statement": "A threat actor on Windows is suspected of loading a vulnerable or unsigned kernel driver (BYOVD) to strip PPL protection from lsass.exe before performing a memory dump. Hunt for unsigned driver loads from staging paths within 60 seconds of a process accessing LSASS memory — the driver load is the pre-condition that makes the dump possible.",
+          "pivots": [
+            { "label": "Sysmon EID 6 → EID 10 chain", "detail": "EID 6: ImageLoaded in (%TEMP%\\* OR C:\\ProgramData\\* OR C:\\Windows\\Temp\\*) AND Signed=false OR SignatureStatus=Untrusted, followed within 60s by EID 10 TargetImage=lsass.exe from same or child process." },
+            { "label": "Known BYOVD driver hashes", "detail": "Correlate EID 6 ImageLoaded hashes against known vulnerable drivers: DBUtil_2_3.sys (CVE-2021-21551), gdrv.sys, RTCore64.sys, AMSDK.sys, procexp152.sys. Block via WDAC vulnerable driver blocklist." },
+            { "label": "PPL stripping via handle manipulation", "detail": "Sysmon EID 10: TargetImage=lsass.exe AND GrantedAccess=0x1fffff from a process that was not able to access LSASS before driver load. Pair with WMI or kernel object manager access events if available." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_access_win_lsass_susp_source_path",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_susp_source_path.yml",
+            "query_hint": "EventCode=6 Signed=false | join EventCode=10 TargetImage=*lsass* [by host] | where timediff < 60s"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Deploy Microsoft WDAC Vulnerable Driver Blocklist policy. Enable Hypervisor-Protected Code Integrity (HVCI) to prevent unsigned kernel drivers from loading." },
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Enable Windows Credential Guard — even if LSASS PPL is bypassed, Credential Guard isolates secrets in VSM so they are unreachable via memory reads." }
+          ],
+          "tools": ["PPLdump", "PPLKiller", "GMER", "AvosLocker custom driver", "Terminator (Spyboy)"],
+          "actors": ["BlackByte", "LAPSUS$", "Vice Society", "AvosLocker"],
+          "refs": [
+            { "label": "Sigma: proc_access_win_lsass_susp_source_path", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_susp_source_path.yml" },
+            { "label": "CISA Known Exploited Vulnerabilities — BYOVD drivers", "type": "advisory", "url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog" },
+            { "label": "Microsoft WDAC Vulnerable Driver Blocklist", "type": "report", "url": "https://learn.microsoft.com/en-us/windows/security/application-security/application-control/windows-defender-application-control/design/microsoft-recommended-driver-block-rules" }
+          ],
+          "fpr": "Near-zero FPR when chaining unsigned driver load + LSASS access within 60 seconds. Signed but revoked drivers (common in BYOVD) may not trigger Signed=false — add revocation status check. Legitimate kernel debugger sessions (WinDbg, kd.exe) may load unsigned drivers; exclude known development environments."
+        },
+        {
+          "id": "HYP-T1003.001-006",
+          "title": "Silent Process Exit / WER Registry Hijack for Auto LSASS Dump",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of configuring the Silent Process Exit or Windows Error Reporting (WER) registry mechanism to automatically trigger a memory dump of lsass.exe without running an external dumper. Hunt for registry writes to the SilentProcessExit or WER LocalDumps keys targeting lsass.exe, followed by WerFault.exe spawned with LSASS as the monitored process.",
+          "pivots": [
+            { "label": "Sysmon EID 13 — Registry set", "detail": "TargetObject contains HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SilentProcessExit\\lsass.exe AND EventType=SetValue. Fields: GlobalFlag, ReportingMode, MonitorProcess. Written by any non-SYSTEM process is suspicious." },
+            { "label": "Sysmon EID 13 — WER LocalDumps", "detail": "TargetObject matches HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\lsass.exe\\DumpType = 2 (full dump). Followed by WerFault.exe EID 1 with CommandLine containing -p [lsass pid]." },
+            { "label": "WerFault dump file creation", "detail": "Sysmon EID 11: WerFault.exe creating .dmp file in C:\\Windows\\Temp\\ or %LOCALAPPDATA%\\CrashDumps\\ with large file size (30–150 MB) at an unexpected time — no user-facing crash dialog preceding it." }
+          ],
+          "detection_logic": {
+            "sigma_title": "registry_set_silentprocessexit_lsass",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_silentprocessexit_lsass.yml",
+            "query_hint": "EventCode=13 TargetObject=*SilentProcessExit*lsass* | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Monitor and restrict writes to HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SilentProcessExit via registry auditing and EDR rules." },
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Enable RunAsPPL for LSASS (HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\RunAsPPL=1) so WerFault cannot dump it without PPL-level trust." }
+          ],
+          "tools": ["reg.exe", "PowerShell", "WerFault.exe (abused LOLBIN)"],
+          "actors": ["Raccoon Stealer variants", "Custom red team tradecraft"],
+          "refs": [
+            { "label": "Sigma: registry_set_silentprocessexit_lsass", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_silentprocessexit_lsass.yml" },
+            { "label": "DFIR Report — WER-based LSASS dumps", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Legitimate crash reporting infrastructure may write to WER LocalDumps paths during genuine application crashes. The key differentiator is the target process (lsass.exe), the registry write originating from a non-SYSTEM, non-WerFault process, and off-hours timing."
+        },
+        {
+          "id": "HYP-T1003.001-007",
+          "title": "Sqldumper.exe LOLBin Abused to Dump LSASS",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of abusing sqldumper.exe, a signed Microsoft SQL Server utility, to create a full memory dump of lsass.exe without deploying unsigned tools. Hunt for sqldumper.exe executed outside a SQL Server process tree, with command-line arguments targeting a PID associated with lsass.exe, and output path in a staging directory.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — sqldumper invocation", "detail": "Image endswith sqldumper.exe AND ParentImage NOT IN (sqlservr.exe, sqlagent.exe, sqlbrowser.exe) AND CommandLine matches pattern: sqldumper.exe [PID] 0 0x01100 [output_path]. PID will be the lsass.exe PID at the time." },
+            { "label": "Output file creation", "detail": "Sysmon EID 11: sqldumper.exe creates SQLDmpr*.mdmp in %TEMP%, C:\\ProgramData\\, or other staging path within seconds of process creation. File size >30 MB indicates full process dump." },
+            { "label": "Correlation with lsass PID", "detail": "Cross-correlate the PID in sqldumper CommandLine with running processes. If PID resolves to lsass.exe at event time, confidence is critical. Use Sysmon EID 5 (process terminate) and EID 1 timestamps to build process lifetime map." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_sqldumper_lsass",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sqldumper_lsass.yml",
+            "query_hint": "EventCode=1 Image=*sqldumper.exe NOT (ParentImage=*sqlservr*) | alert"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Block sqldumper.exe execution via WDAC or AppLocker on non-SQL-Server systems. Alert on any sqldumper.exe execution outside SQL Server install directory." },
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Enable Credential Guard to prevent credential extraction from LSASS even if a dump is obtained." }
+          ],
+          "tools": ["sqldumper.exe (LOLBIN)"],
+          "actors": ["BlackByte", "Nokoyawa", "Babuk"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_sqldumper_lsass", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sqldumper_lsass.yml" },
+            { "label": "LOLBAS: sqldumper.exe", "type": "lolbas", "url": "https://lolbas-project.github.io/lolbas/OtherMSBinaries/Sqldumper/" }
+          ],
+          "fpr": "Sqldumper.exe is legitimate when spawned by SQL Server processes (sqlservr.exe, sqlagent.exe). Alert exclusively when the parent is cmd.exe, powershell.exe, wscript.exe, or any non-SQL-Server binary, and the output path is outside the SQL diagnostic directory."
+        },
+        {
+          "id": "HYP-T1003.001-008",
+          "title": "Direct Syscall / Fork-Clone LSASS Dump (NanoDump Fingerprint)",
+          "severity": "critical",
+          "statement": "A threat actor on Windows is suspected of using a custom tool that bypasses user-mode API hooks via direct syscalls or clones the LSASS process before dumping, leaving a CallTrace anomaly as the primary forensic signal. Hunt for LSASS access events where CallTrace contains UNKNOWN memory regions or does not terminate in ntdll.dll, indicating a direct syscall path that bypasses EDR hook points.",
+          "pivots": [
+            { "label": "Sysmon EID 10 — UNKNOWN CallTrace", "detail": "TargetImage=lsass.exe AND CallTrace contains UNKNOWN. The UNKNOWN segment indicates code executing from unbacked memory — characteristic of direct syscall stubs, reflective loaders, or shellcode. High confidence when GrantedAccess = 0x1fffff." },
+            { "label": "NanoDump fork-clone artifact", "detail": "NanoDump forks LSASS (clones the process) then dumps the clone. Look for: a short-lived process with the same image path as lsass.exe OR a process with ParentPID=lsass.exe PID appearing briefly. Sysmon EID 1+5 pair on lsass-like process within 5 seconds." },
+            { "label": "Encrypted/compressed output file", "detail": "NanoDump writes an XOR-encrypted or compressed dump (not a standard .dmp) to disk. Hunt EID 11: file created by an unusual process in staging path with .dmp, .bin, .tmp extension and file size 30–200 MB within seconds of the EID 10 event." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_access_win_lsass_memdump_direct_syscall",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml",
+            "query_hint": "EventCode=10 TargetImage=*lsass* CallTrace=*UNKNOWN* | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "EDRs with kernel-level callbacks (minifilter + ETW kernel) can detect direct syscalls that bypass user-mode hooks. Enable kernel telemetry on security products. HVCI prevents most direct-syscall techniques." },
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Credential Guard isolates LSASS secrets even if memory is successfully dumped — the secrets are in VSM and appear as opaque blobs in the dump." }
+          ],
+          "tools": ["NanoDump", "GoLssassDumper", "SharpLsassDump", "custom shellcode loaders"],
+          "actors": ["Lazarus Group", "DPRK APTs", "Scattered Spider"],
+          "refs": [
+            { "label": "Elastic: NanoDump detection research", "type": "report", "url": "https://www.elastic.co/security-labs/lsass-memory-dumps" },
+            { "label": "Sigma: proc_access_win_lsass_memdump", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml" },
+            { "label": "NanoDump GitHub (research reference)", "type": "report", "url": "https://github.com/helpsystems/nanodump" }
+          ],
+          "fpr": "UNKNOWN CallTrace segments are rare in legitimate software. Primary false positive source is security software with in-process trampolines or kernel callbacks not registered via standard module loading. Validate by correlating with process reputation, parent, and signed status."
+        }
+      ]
+    },
+    "T1003.002": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1003.002-001",
+          "title": "Registry Save of SAM / SECURITY / SYSTEM Hives via reg.exe",
+          "severity": "critical",
+          "statement": "A threat actor on Windows is suspected of using reg.exe to save the SAM, SECURITY, and SYSTEM registry hives to disk for offline password hash extraction. Hunt for reg.exe executing a save or export of any of these three hives — especially when SAM and SYSTEM are both saved in the same session, as both are required to decrypt the password hashes.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — reg.exe hive save", "detail": "Image endswith reg.exe AND CommandLine matches (save|export) AND CommandLine contains (HKLM\\SAM OR HKLM\\SECURITY OR HKLM\\SYSTEM OR hklm\\sam OR hklm\\security OR hklm\\system). Alert as critical when SAM and SYSTEM are saved within 60 seconds of each other from the same session." },
+            { "label": "Output file creation", "detail": "Sysmon EID 11: file created by reg.exe in %TEMP%, C:\\Windows\\Temp, C:\\ProgramData, or user home directory with extensions .hiv, .save, .bak, .dat, .sam, or no extension. File size typically 10–100 KB for SAM, 10–30 KB for SECURITY." },
+            { "label": "Privilege requirement", "detail": "reg.exe hive save requires SeBackupPrivilege or local administrator. EID 4656: object access audit for HKLM\\SAM with AccessMask 0x20019. Correlate with EID 4672 (special privilege logon) to confirm administrator-level execution." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_reg_hive_dump",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_reg_dump_sam.yml",
+            "query_hint": "EventCode=1 Image=*reg.exe CommandLine=*(save|export)* CommandLine=*(HKLM\\SAM|HKLM\\SECURITY|HKLM\\SYSTEM)*"
+          },
+          "mitigations": [
+            { "id": "M1027", "name": "Password Policies", "detail": "Enforce strong, unique passwords — offline SAM cracking yields NTLM hashes which are trivially cracked for weak passwords via hashcat/john." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Restrict local administrator accounts. Disable built-in Administrator. Require MFA for privileged access to reduce the attack surface for hive extraction." }
+          ],
+          "tools": ["reg.exe (LOLBIN)", "Impacket secretsdump.py", "CrackMapExec --sam", "fgdump"],
+          "actors": ["APT29 (Midnight Blizzard)", "Conti", "REvil/Sodinokibi", "LockBit"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_reg_dump_sam", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_reg_dump_sam.yml" },
+            { "label": "CISA AA21-265A — Conti ransomware", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa21-265a" },
+            { "label": "Red Canary TDR — Credential Theft", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
+          ],
+          "fpr": "IT and backup tools (backup agents, Veeam, Windows Server Backup) legitimately access registry hives via VSS — they do not call reg.exe save. Legitimate reg.exe save operations in enterprise are extremely rare outside controlled migration tasks. Exclude parent processes that are signed backup software. Alert whenever reg.exe saves SAM regardless of parent."
+        },
+        {
+          "id": "HYP-T1003.002-002",
+          "title": "SAM / NTDS File Theft via Volume Shadow Copy",
+          "severity": "critical",
+          "statement": "A threat actor on Windows is suspected of creating or accessing a VSS shadow copy to retrieve SAM or NTDS credential files without triggering live registry access controls. Hunt for vssadmin or wmic shadow creation followed by file copy operations targeting the config or NTDS directory path from within a shadow volume path.",
+          "pivots": [
+            { "label": "Shadow creation", "detail": "EID 1: vssadmin.exe 'create shadow' OR wmic shadowcopy call create. If these appear on a domain controller, risk is critical. Correlate with subsequent file copy within 5 minutes from same session." },
+            { "label": "SAM copy from shadow", "detail": "Sysmon EID 1: cmd.exe OR copy.exe OR xcopy.exe OR robocopy.exe CommandLine matching path \\\\?\\GLOBALROOT\\Device\\HarddiskVolumeShadowCopy*\\Windows\\System32\\config\\SAM. Also: esentutl.exe /y targeting shadow path." },
+            { "label": "Sysmon EID 24 — Raw disk read", "detail": "RawAccessRead on device path \\\\Device\\HarddiskVolumeShadowCopy* by non-backup process. Also EID 11: SAM or ntds.dit file appearing outside its canonical path (C:\\Windows\\System32\\config\\ or C:\\Windows\\NTDS\\)." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_vssadmin_ntds_shadow",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_vssadmin_ntds_shadow.yml",
+            "query_hint": "EventCode=1 Image=*vssadmin* CommandLine=*create* | followby EventCode=1 CommandLine=*HarddiskVolumeShadowCopy* within 300s"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Restrict VSS creation and management to backup service accounts. EDR rules alerting on vssadmin.exe by non-backup parent processes." },
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Configure SACL auditing on NTDS.dit and SAM file paths. Monitor EID 4663 (object access) for SAM/NTDS file reads outside backup windows." }
+          ],
+          "tools": ["vssadmin.exe", "wmic.exe", "diskshadow.exe", "esentutl.exe", "Impacket secretsdump"],
+          "actors": ["APT41 (Winnti)", "LockBit 3.0", "BlackBasta", "Cl0p"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_vssadmin_ntds_shadow", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_vssadmin_ntds_shadow.yml" },
+            { "label": "CISA AA23-075A — LockBit shadow copy deletion", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" },
+            { "label": "DFIR Report — Shadow copy credential theft", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Legitimate backup solutions (Veeam, Windows Server Backup, Acronis) create VSS shadows routinely. The key differentiator is the SUBSEQUENT file copy targeting SAM, NTDS.dit, or SECURITY hive paths from the shadow volume. Exclude backup service accounts by SID and parent process signature."
+        },
+        {
+          "id": "HYP-T1003.002-003",
+          "title": "Remote SAM Extraction via Impacket / CrackMapExec",
+          "severity": "high",
+          "statement": "A threat actor with valid credentials is suspected of remotely extracting SAM hashes from a target host using Impacket secretsdump or CrackMapExec without deploying any binary to the target. Hunt for unexpected network authentication to the target followed by remote registry access over SMB, which is the transport mechanism for remote SAM extraction.",
+          "pivots": [
+            { "label": "EID 4624 type 3 logon + registry pipe", "detail": "On target host: EID 4624 type 3 (network logon) from a workstation or attacker IP, followed within 30 seconds by EID 5145: network share access to \\PIPE\\winreg (Windows Remote Registry protocol). The combination is the exact fingerprint of secretsdump SAM extraction." },
+            { "label": "Remote registry service", "detail": "EID 7036 (Windows): RemoteRegistry service changed to Running state immediately before the 5145 event. secretsdump enables the service on demand. Alert on RemoteRegistry starting outside maintenance windows, especially on workstations." },
+            { "label": "Large outbound SMB transfer", "detail": "Network: >50 KB data transferred outbound from target on port 445 within 60 seconds of the network logon. The extracted hashes and registry data are returned over the same SMB session." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_susp_winreg_remote_access",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_winreg_remote_access.yml",
+            "query_hint": "EventCode=5145 ShareName=*PIPE* RelativeTargetName=winreg | join EventCode=4624 LogonType=3 [by host, within 30s]"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Disable Remote Registry service on workstations and member servers. Restrict who can connect to ADMIN$ and IPC$ shares via host-based firewall rules." },
+            { "id": "M1027", "name": "Password Policies", "detail": "Enforce unique local administrator passwords via LAPS to prevent lateral movement after initial SAM extraction yields reusable credentials." }
+          ],
+          "tools": ["Impacket secretsdump.py", "CrackMapExec --sam", "NetExec", "Metasploit hashdump"],
+          "actors": ["APT28 (Fancy Bear)", "FIN6", "FIN7", "ransomware IABs"],
+          "refs": [
+            { "label": "Sigma: win_security_susp_winreg_remote_access", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_winreg_remote_access.yml" },
+            { "label": "Elastic: Impacket secretsdump detection", "type": "report", "url": "https://www.elastic.co/security-labs/siestagraph-new-implant-uncovered-in-asean-member-nation" },
+            { "label": "DFIR Report — secretsdump lateral movement", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Remote Registry access is used by some RMM tools (ConnectWise, Kaseya) and Group Policy infrastructure. Exclude known RMM source IPs and service accounts. The strongest FPR reduction is alerting only when RemoteRegistry is started dynamically (EID 7036 transition from Stopped to Running)."
+        }
+      ]
+    },
+    "T1003.003": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1003.003-001",
+          "title": "ntdsutil IFM Snapshot for Offline NTDS.dit Extraction",
+          "severity": "critical",
+          "statement": "A threat actor with Domain Admin or Backup Operator privileges on a domain controller is suspected of using ntdsutil to create an Install-from-Media snapshot that contains a full copy of the NTDS.dit Active Directory database. Hunt for ntdsutil.exe execution on any host — especially domain controllers — with IFM-related command arguments, as this is almost never a legitimate administrative activity outside planned DC provisioning.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — ntdsutil IFM", "detail": "Image endswith ntdsutil.exe AND CommandLine contains (ifm OR 'install from media' OR 'activate instance ntds' OR 'create full'). Any execution outside a documented DC promotion/demotion change window should be treated as critical." },
+            { "label": "Output directory creation", "detail": "Sysmon EID 11: ntds.dit file creation in a non-NTDS path (not C:\\Windows\\NTDS\\) by ntdsutil.exe or by a process running as SYSTEM shortly after. Output dir is typically specified by the attacker — check for staging paths." },
+            { "label": "Privilege audit", "detail": "EID 4672 (Special Logon) with SeBackupPrivilege and SeTakeOwnershipPrivilege in the privileges list, immediately before ntdsutil execution. EID 4648 shows the account used. Cross-reference with the account's normal behavior baseline." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_ntdsutil_susp_usage",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_ntdsutil_susp_usage.yml",
+            "query_hint": "EventCode=1 Image=*ntdsutil.exe CommandLine=*(ifm|install from media)* | alert critical on DC hosts"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Restrict membership of Backup Operators and Domain Admins. Require privileged access workstations (PAWs) for DC administration. Alert on any non-scheduled ntdsutil execution." },
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Enable advanced audit policy on domain controllers for DS Access (EID 4662) and Audit Privilege Use. Forward DC logs to SIEM with low-latency alerting." }
+          ],
+          "tools": ["ntdsutil.exe (LOLBIN)", "Impacket secretsdump.py", "esentutl.exe"],
+          "actors": ["APT28 (Fancy Bear)", "APT29 (Midnight Blizzard)", "FIN6", "Maze", "BlackBasta"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_ntdsutil_susp_usage", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_ntdsutil_susp_usage.yml" },
+            { "label": "CISA AA20-296A — APT29 NTDS extraction", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa20-296a" },
+            { "label": "DFIR Report — Maze NTDS theft", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "ntdsutil IFM is used legitimately only when provisioning a new DC from media. In most enterprises this happens once during initial deployment or controlled DR testing. Allowlist only when change management records confirm a DC promotion activity in the same time window."
+        },
+        {
+          "id": "HYP-T1003.003-002",
+          "title": "diskshadow.exe LOLBin Abuse for NTDS.dit Copy",
+          "severity": "critical",
+          "statement": "A threat actor on a domain controller is suspected of abusing diskshadow.exe, a signed Microsoft utility, to create and expose a VSS shadow copy and then extract NTDS.dit without invoking vssadmin directly. Hunt for diskshadow.exe executed with a script file argument, followed by esentutl or copy operations targeting the shadow volume path containing NTDS.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — diskshadow with script", "detail": "Image endswith diskshadow.exe AND (CommandLine contains '/s' OR CommandLine contains '-s'). The script file is attacker-controlled and typically contains: set context persistent nowriters / add volume C: / create / expose %f: e: / exec cmd.exe /c copy e:\\NTDS\\ntds.dit C:\\Temp\\." },
+            { "label": "NTDS.dit outside canonical path", "detail": "Sysmon EID 11: file creation of ntds.dit in any path other than C:\\Windows\\NTDS\\ by any process other than lsass.exe or ntdsutil.exe. This is an almost guaranteed true positive." },
+            { "label": "esentutl copy chain", "detail": "EID 1: esentutl.exe /y [shadow volume path]\\ntds.dit /d [staging path]\\ntds.dit — the /y flag is the copy flag. Immediately following diskshadow execution confirms the NTDS theft chain." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_diskshadow_script_mode",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_diskshadow_script_mode.yml",
+            "query_hint": "EventCode=1 Image=*diskshadow.exe CommandLine=*(-s|/s)* | followby EventCode=11 TargetFilename=*ntds.dit* within 300s"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Restrict diskshadow.exe via WDAC or AppLocker on domain controllers. Alert on any diskshadow.exe execution as it has no routine interactive administrative use." },
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Configure SACL on C:\\Windows\\NTDS\\ntds.dit to audit all non-lsass read access. Forward EID 4663 from DCs to SIEM." }
+          ],
+          "tools": ["diskshadow.exe (LOLBIN)", "esentutl.exe (LOLBIN)", "vssadmin.exe"],
+          "actors": ["LockBit 3.0", "Conti", "BlackBasta", "FIN6"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_diskshadow_script_mode", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_diskshadow_script_mode.yml" },
+            { "label": "LOLBAS: diskshadow.exe", "type": "lolbas", "url": "https://lolbas-project.github.io/lolbas/Binaries/Diskshadow/" },
+            { "label": "DFIR Report — diskshadow NTDS theft", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "diskshadow.exe in interactive mode (no /s flag) may be used by storage admins. The /s script mode is almost exclusively malicious in post-compromise scenarios. Zero legitimate use case for diskshadow creating a shadow and immediately copying ntds.dit."
+        },
+        {
+          "id": "HYP-T1003.003-003",
+          "title": "Remote NTDS Extraction via Impacket secretsdump",
+          "severity": "critical",
+          "statement": "A threat actor with Domain Admin credentials is suspected of remotely extracting all Active Directory password hashes from a domain controller using Impacket secretsdump without interacting with the DC file system directly. Hunt for unexpected administrative SMB authentication to a DC followed by VSS shadow creation and large data transfer — the network-only NTDS dump signature.",
+          "pivots": [
+            { "label": "EID 4624 + VSS service on DC", "detail": "On DC: EID 4624 type 3 logon from non-DC, non-admin workstation IP, immediately followed by EID 7036: Volume Shadow Copy service transitioning to Running. secretsdump triggers VSS remotely to access ntds.dit." },
+            { "label": "ADMIN$ share + large SMB transfer", "detail": "EID 5145: ADMIN$ share access from attacker IP on DC, combined with >1 MB outbound SMB data transfer within 60 seconds. The encrypted NTDS hashes are returned over SMB." },
+            { "label": "EID 4662 — NTDS replication or access", "detail": "EID 4662 on DC: accesses to NTDS.dit-related object or DS-Replication attributes by the authenticated account. Correlate with the source IP from the network logon. If the IP is a workstation (not another DC), escalate immediately." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_admin_share_access_vss_combined",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_ntlm_auth.yml",
+            "query_hint": "EventCode=4624 LogonType=3 TargetHost=*DC* | followby EventCode=7036 ServiceName=VSS State=Running within 60s [on same host]"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Use tiered admin model: Tier-0 accounts (DA/EA) restricted to PAWs. Block Tier-0 accounts from logging into non-DC systems. Require MFA for all DC admin access." },
+            { "id": "M1015", "name": "Active Directory Configuration", "detail": "Restrict who can initiate VSS on DCs. Monitor DC-to-workstation authentication patterns — DCs should rarely initiate or receive logins from regular workstations." }
+          ],
+          "tools": ["Impacket secretsdump.py", "NetExec --ntds", "CrackMapExec --ntds"],
+          "actors": ["APT29 (Midnight Blizzard)", "APT28 (Fancy Bear)", "Turla", "CL0P affiliates", "Conti"],
+          "refs": [
+            { "label": "CISA AA22-276A — APT29 authentication abuse", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-276a" },
+            { "label": "Elastic: Impacket network signatures", "type": "report", "url": "https://www.elastic.co/security-labs/practical-security-engineering-stateful-detection" },
+            { "label": "Sigma: win_security_susp_ntlm_auth", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_ntlm_auth.yml" }
+          ],
+          "fpr": "DC-to-DC replication legitimately triggers VSS and NTDS access. Baseline which IPs are DCs and exclude DC machine accounts. The critical differentiator is a workstation or member server IP — not a DC — initiating the SMB logon followed by VSS."
+        }
+      ]
+    },
+    "T1003.004": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1003.004-001",
+          "title": "Registry Save of SECURITY Hive for LSA Secret Extraction",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of saving the HKLM\\SECURITY registry hive — which contains LSA secrets including service account passwords, DPAPI master keys, and cached domain credentials — for offline extraction. Hunt for reg.exe saving SECURITY combined with SYSTEM in the same session, as the SYSTEM hive contains the boot key required to decrypt LSA secrets.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — SECURITY hive save", "detail": "Image endswith reg.exe AND CommandLine matches (save|export) AND CommandLine contains (HKLM\\SECURITY OR hklm\\security). Escalate to critical when SYSTEM hive is also saved within the same session (60-second window)." },
+            { "label": "SECURITY hive registry access", "detail": "EID 4656: handle requested to HKLM\\SECURITY\\Policy\\Secrets or subkeys with AccessMask 0x20019 (read) by a process that is not lsass.exe or svchost.exe. Non-system processes accessing LSA secrets subkeys is anomalous." },
+            { "label": "Post-extraction service logon", "detail": "After extraction, watch for EID 4624 logons using service account credentials from unusual source IPs — adversaries use extracted service passwords for lateral movement within minutes of extraction." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_reg_dump_sam",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_reg_dump_sam.yml",
+            "query_hint": "EventCode=1 Image=*reg.exe CommandLine=*HKLM\\\\SECURITY* CommandLine=*(save|export)*"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Limit local administrator accounts. Use Group Managed Service Accounts (gMSA) to prevent service account password reuse — gMSA passwords are 240-bit random values that cannot be extracted usefully." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable enhanced LSA protection (RunAsPPL) to prevent unauthorized LSA secret access. Audit HKLM\\SECURITY key access via Windows auditing policies." }
+          ],
+          "tools": ["reg.exe (LOLBIN)", "Mimikatz lsadump::secrets", "Impacket secretsdump.py -security"],
+          "actors": ["Carbanak", "FIN7", "APT29", "LockBit affiliates"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_reg_dump_sam", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_reg_dump_sam.yml" },
+            { "label": "CISA AA22-074A — Destructive malware using LSA secrets", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-074a" }
+          ],
+          "fpr": "Backup solutions with system-level access legitimately read SECURITY hive data, but not via reg.exe save. Alert on any reg.exe save of HKLM\\SECURITY — there is essentially no legitimate interactive administrative use case. Backup agents use VSS or API access, not reg.exe."
+        },
+        {
+          "id": "HYP-T1003.004-002",
+          "title": "Mimikatz lsadump::secrets Live LSA Secret Extraction",
+          "severity": "high",
+          "statement": "A threat actor with elevated privileges is suspected of running Mimikatz lsadump::secrets (or equivalent) to extract LSA secrets directly from LSASS memory, immediately pivoting to lateral movement using extracted service account credentials. Hunt for broad LSASS memory access followed within minutes by service account logons from the same host to new targets.",
+          "pivots": [
+            { "label": "LSASS access with secret-read mask", "detail": "Sysmon EID 10: TargetImage=lsass.exe AND GrantedAccess IN (0x1410, 0x1010, 0x0010) from a non-system binary. The 0x1410 mask (PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ) is the Mimikatz lsadump::secrets access pattern." },
+            { "label": "Post-extraction service account logon", "detail": "Within 10 minutes of LSASS access: EID 4624 type 3 logon using a service account (name ending in svc, _svc, -sa, or matching known service account naming) from the compromised host to a new target — lateral movement using extracted service password." },
+            { "label": "EID 4611 — Debug privilege assignment", "detail": "EID 4611: A trusted logon process has been registered (SeDebugPrivilege assignment). Mimikatz requires SeDebugPrivilege before accessing LSASS. This event fires when a process enables debug privilege — correlate with the lsass.exe access event." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_access_win_lsass_memdump",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml",
+            "query_hint": "EventCode=10 TargetImage=*lsass* GrantedAccess=0x1410 | followby EventCode=4624 LogonType=3 [by host] within 600s"
+          },
+          "mitigations": [
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Replace service account passwords with Group Managed Service Accounts (gMSA). Enable Credential Guard to move LSASS secrets into VSM." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "EDR with LSASS protection rules. Enable RunAsPPL for LSASS (HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\RunAsPPL=1)." }
+          ],
+          "tools": ["Mimikatz lsadump::secrets", "Cobalt Strike (Mimikatz integration)", "CrackMapExec"],
+          "actors": ["Carbanak", "FIN7", "Scattered Spider", "Lapsus$"],
+          "refs": [
+            { "label": "CISA AA22-074A — FIN7 LSA credential theft", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-074a" },
+            { "label": "Sigma: proc_access_win_lsass_memdump", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml" }
+          ],
+          "fpr": "SeDebugPrivilege assignment (EID 4611) occurs for some legitimate monitoring agents. Focus on pairing EID 4611 with the LSASS access event from the same process. Service account logons for lateral movement will typically target servers the account has no historical logon to — check logon history baseline."
+        }
+      ]
+    },
+    "T1003.005": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1003.005-001",
+          "title": "Cached Domain Credential Hash Extraction via SECURITY + SYSTEM Hive Pair",
+          "severity": "high",
+          "statement": "A threat actor on a domain-joined Windows host is suspected of exfiltrating cached domain logon hashes (MSCacheV2 / DCC2) by saving the SECURITY hive (which contains the hashes) and the SYSTEM hive (which contains the boot key needed to decrypt them) for offline hashcat cracking. Hunt for both hives saved within the same session — together they are sufficient to crack cached domain credentials offline.",
+          "pivots": [
+            { "label": "Dual hive save pattern", "detail": "Sysmon EID 1: two reg.exe save commands within 60 seconds — one targeting HKLM\\SECURITY and one targeting HKLM\\SYSTEM — from the same parent process or interactive session. This combination is the exact prerequisite for offline MSCacheV2 cracking with hashcat -m 2100." },
+            { "label": "Post-cracking logon from attacker", "detail": "After exfiltration, watch for domain account logons (EID 4624) from new/unusual source IPs using accounts that last authenticated from the compromised endpoint — indicating successful cracking of cached hashes and use as valid credentials." },
+            { "label": "Offline staging before exfil", "detail": "Sysmon EID 11: .hiv, .save, .bak, or similarly named files in %TEMP% or %ProgramData% shortly after the reg.exe events. Often compressed into .zip or .7z immediately before transfer — monitor for archive creation by cmd.exe or powershell.exe in same timeframe." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_reg_dump_sam",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_reg_dump_sam.yml",
+            "query_hint": "EventCode=1 Image=*reg.exe CommandLine=*HKLM\\\\SECURITY* | followby Image=*reg.exe CommandLine=*HKLM\\\\SYSTEM* within 60s"
+          },
+          "mitigations": [
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Reduce cached logon count to 0 via GPO (Interactive logon: Number of previous logons to cache = 0) on servers and privileged systems where offline access is not needed." },
+            { "id": "M1027", "name": "Password Policies", "detail": "Long, complex domain passwords significantly increase the time to crack MSCacheV2 hashes. Enforce 20+ character passphrases for privileged accounts — even with GPU cracking rigs, DCC2 with strong passwords is infeasible in reasonable time." }
+          ],
+          "tools": ["reg.exe", "Mimikatz lsadump::cache", "Impacket secretsdump.py -cache", "hashcat -m 2100"],
+          "actors": ["TA505", "Maze", "Egregor", "Hive ransomware"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_reg_dump_sam", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_reg_dump_sam.yml" },
+            { "label": "CISA AA21-265A — Conti cached credential abuse", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa21-265a" }
+          ],
+          "fpr": "Both SECURITY and SYSTEM hives are accessed by backup tools, but not via reg.exe save. Legitimate GPO-driven registry operations do not use reg.exe save. If reg.exe save of SECURITY is detected, it warrants investigation regardless of context."
+        },
+        {
+          "id": "HYP-T1003.005-002",
+          "title": "Mimikatz lsadump::cache Targeted at Cached Privileged Account Hashes",
+          "severity": "high",
+          "statement": "A threat actor on a domain-joined endpoint is suspected of using Mimikatz lsadump::cache to extract cached domain credential hashes through LSASS, targeting high-value accounts (Domain Admins, service accounts) that have previously logged into the machine. Hunt for LSASS memory access with the Mimikatz credential-access mask, followed by lateral movement attempts using domain administrator credentials from the compromised endpoint.",
+          "pivots": [
+            { "label": "LSASS access + cached creds context", "detail": "Sysmon EID 10: TargetImage=lsass.exe from a non-system process. Correlate with: the endpoint's last interactive logon history (EID 4624/4634) to identify which domain accounts have cached credentials on this machine — these are the attacker's targets." },
+            { "label": "DA account used from workstation", "detail": "EID 4624 type 3 from the compromised workstation using a Domain Admin or privileged account, within 30 minutes of the LSASS access event. Domain Admin accounts should never authenticate FROM workstations in a properly segmented environment." },
+            { "label": "EID 4776 — NTLM auth failure spike", "detail": "Multiple EID 4776 NTLM authentication failures from the compromised host in the minutes after LSASS access may indicate the attacker is testing cracked cached hashes against network resources before they are fully cracked." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_access_win_lsass_memdump",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml",
+            "query_hint": "EventCode=4624 LogonType=3 SubjectUserName=*admin* | where source_host is workstation NOT DC | correlate with prior EID=10 TargetImage=lsass"
+          },
+          "mitigations": [
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Set CachedLogonsCount to 0 or 1 on servers and privileged-access workstations. This eliminates the attack surface for cached credential extraction on those machines." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Enforce tiered administration — Tier-0 accounts (DA) must never interactively log into Tier-1/2 machines. This prevents privileged caches from appearing on workstations." }
+          ],
+          "tools": ["Mimikatz lsadump::cache", "Impacket secretsdump.py", "CrackMapExec"],
+          "actors": ["TA505", "Egregor", "BlackCat/ALPHV", "Hive"],
+          "refs": [
+            { "label": "Sigma: proc_access_win_lsass_memdump", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml" },
+            { "label": "Red Canary TDR — Credential Access patterns", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
+          ],
+          "fpr": "LSASS access alone is insufficient — the correlation with privileged account lateral movement is the key signal. Focus detection on the post-extraction behavior (DA logon from workstation) rather than the extraction event alone, which reduces alert fatigue from EDR LSASS access noise."
+        }
+      ]
+    },
+    "T1003.006": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1003.006-001",
+          "title": "DCSync via DS-Replication Rights Abuse (Primary Detection)",
+          "severity": "critical",
+          "statement": "A threat actor with an account granted DS-Replication-Get-Changes and DS-Replication-Get-Changes-All rights is suspected of using the DCSync technique to pull all Active Directory password hashes, including krbtgt, without touching the domain controller file system. Hunt for directory replication access events (EID 4662) from accounts that are not domain controller machine accounts and not on the legitimate replication IP baseline.",
+          "pivots": [
+            { "label": "EID 4662 — Non-DC replication access", "detail": "On DC: EID 4662 with Properties containing {19195a5b-6da0-11d0-afd3-00c04fd930c9} (DS-Replication-Get-Changes) AND {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2} (DS-Replication-Get-Changes-All) AND SubjectUserName does NOT end in $ (machine account) and is not in the known DC list. This is the highest-confidence DCSync signal." },
+            { "label": "EID 4929 — Replication source removal", "detail": "EID 4929: An Active Directory replica source naming context was removed. This fires during DCSync and is a secondary confirmation signal. Combined with EID 4662, confidence approaches 100%." },
+            { "label": "MSRPC DRS traffic from non-DC", "detail": "Network: MS-DRSR (DRS protocol) traffic on dynamic RPC port (49152-65535) from a non-DC source IP to DC. NDR payload containing DRSGetNCChanges RPC operation. Zeek or Suricata with MS-RPC dissection can detect this without Windows event logs." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_dcsync",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_dcsync.yml",
+            "query_hint": "EventCode=4662 Properties=*19195a5b* Properties=*1131f6ad* SubjectUserName!=*$ | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1015", "name": "Active Directory Configuration", "detail": "Audit and restrict DS-Replication rights. Only DC machine accounts should have DS-Replication-Get-Changes-All. Use BloodHound or PingCastle to enumerate accounts with DCSync rights and remove unauthorized grants." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Enforce least privilege on AD ACLs. Use Protected Users security group for privileged accounts to prevent NTLM use even if hashes are stolen." }
+          ],
+          "tools": ["Mimikatz lsadump::dcsync", "Impacket secretsdump.py -just-dc", "SharpKatz", "NetExec --ntds"],
+          "actors": ["APT29 (Midnight Blizzard)", "APT28 (Fancy Bear)", "Conti", "BlackBasta", "UNC3944/Scattered Spider"],
+          "refs": [
+            { "label": "Sigma: win_security_dcsync", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_dcsync.yml" },
+            { "label": "CISA AA21-265A — Conti DCSync", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa21-265a" },
+            { "label": "Elastic: DCSync detection", "type": "report", "url": "https://www.elastic.co/security-labs/detecting-dcsync-attacks" }
+          ],
+          "fpr": "Legitimate DC-to-DC replication generates identical EID 4662 events — filter by SubjectUserName ending in $ (machine accounts) and source IPs matching your known DC list. The SubjectUserName NOT ending in $ with replication GUIDs is the definitive true positive condition."
+        },
+        {
+          "id": "HYP-T1003.006-002",
+          "title": "DCSync Privilege Pre-Grant via AD ACL Modification",
+          "severity": "high",
+          "statement": "A threat actor with WriteDACL or GenericAll rights on the domain object is suspected of granting a controlled account DCSync replication rights before executing DCSync, enabling persistence and delayed credential harvest. Hunt for modifications to the domain root object's security descriptor that add DS-Replication rights to non-DC accounts — this is the setup phase that precedes DCSync execution.",
+          "pivots": [
+            { "label": "EID 5136 — Domain object SecurityDescriptor modified", "detail": "EID 5136: Directory service object modified where ObjectDN matches the domain root (DC=domain,DC=com) AND AttributeLDAPDisplayName=nTSecurityDescriptor. Any modification to the domain root security descriptor should be investigated — DCSync right grants will appear as ACE additions." },
+            { "label": "EID 4662 — Permission change audit", "detail": "EID 4662 with AccessMask 0x40000 (WriteDACL) or 0x10000000 (GenericAll) on the domain root object. Combined with EID 5136, this shows who made the change." },
+            { "label": "BloodHound / AD enumeration precursor", "detail": "LDAP queries enumerating domain ACLs (ObjectClass=domain, nTSecurityDescriptor attribute reads) from a workstation via LDAP port 389/636 in the hours or days before the ACL modification. BloodHound collectors generate characteristic LDAP query patterns." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_dcsync_replication_rights_granted",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_dcsync.yml",
+            "query_hint": "EventCode=5136 ObjectDN=*DC=* AttributeLDAPDisplayName=nTSecurityDescriptor | alert and investigate"
+          },
+          "mitigations": [
+            { "id": "M1015", "name": "Active Directory Configuration", "detail": "Regularly audit domain root ACLs with PowerView Get-DomainObjectAcl or BloodHound. Enable EID 5136 auditing on all DCs. Remove unnecessary WriteDACL grants from non-admin accounts." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Restrict WriteDACL on domain objects to the built-in Administrators group and SYSTEM. Monitor AD delegation changes with tools like PingCastle or Purple Knight." }
+          ],
+          "tools": ["PowerView Set-DomainObjectAcl", "Impacket dacledit.py", "BloodHound", "Active Directory module"],
+          "actors": ["APT29 (Midnight Blizzard)", "Lazarus Group", "LockBit affiliates"],
+          "refs": [
+            { "label": "Sigma: win_security_dcsync", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_dcsync.yml" },
+            { "label": "CISA AA22-276A — ACL abuse in APT29 operations", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-276a" },
+            { "label": "BloodHound — DCSync attack paths", "type": "report", "url": "https://bloodhound.readthedocs.io/en/latest/data-analysis/edges.html#dcsync" }
+          ],
+          "fpr": "EID 5136 domain object modifications are noisy in environments with active AD management. Focus specifically on nTSecurityDescriptor attribute changes on the domain root object. Changes during off-hours or by accounts not in the AD Admins team are red flags."
+        },
+        {
+          "id": "HYP-T1003.006-003",
+          "title": "DCSync Network Fingerprint — DRSGetNCChanges from Workstation",
+          "severity": "critical",
+          "statement": "A threat actor is suspected of executing DCSync entirely over the network using Impacket or similar tooling, without placing any binary on disk on the domain controller. Hunt for the MS-DRSR DRSGetNCChanges RPC call originating from a non-DC host — this network-level signature is detectable via IDS/NDR even without Windows event log access to the DC.",
+          "pivots": [
+            { "label": "MS-DRSR RPC from non-DC IP", "detail": "Network IDS/NDR: MSRPC bind to MS-DRSR interface UUID {e3514235-4b06-11d1-ab04-00c04fc2dcd2} from source IP NOT in the known DC IP list. The DRSGetNCChanges opnum 3 call carries the actual hash replication. Zeek: msrpc.log endpoint=DRSR from workstation IP." },
+            { "label": "Impacket tool fingerprint", "detail": "Impacket's MS-RPC implementation has characteristic patterns: specific SMB negotiate dialect order, NTLM authentication with specific field ordering, and RPC bind request with specific AlterContext flags. Network sandbox or protocol analysis can fingerprint Impacket vs. native MS clients." },
+            { "label": "Large encrypted RPC response", "detail": "DRSGetNCChanges returns encrypted NTDS hash data — a large (>100 KB) RPC response from DC to the requesting non-DC host within seconds of the DRS bind is the data exfiltration event. Correlate with EID 4624 type 3 on the DC from the same source IP." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_dcsync",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_dcsync.yml",
+            "query_hint": "zeek msrpc_log endpoint=MS-DRSR src_ip NOT IN dc_ip_list | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1015", "name": "Active Directory Configuration", "detail": "Implement network segmentation blocking DRS RPC traffic from workstations to DCs. Only DC-to-DC replication should traverse the MSRPC dynamic port range on the DC network segment." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Enforce Protected Users security group membership for DA accounts to block NTLM and force Kerberos only — Impacket's default DCSync path is NTLM which is blocked for Protected Users." }
+          ],
+          "tools": ["Impacket secretsdump.py -just-dc-ntlm", "NetExec --ntds", "SharpKatz", "Mimikatz dcsync via network"],
+          "actors": ["APT29", "Turla", "CL0P", "Conti", "REvil"],
+          "refs": [
+            { "label": "Elastic: network-level DCSync detection", "type": "report", "url": "https://www.elastic.co/security-labs/detecting-dcsync-attacks" },
+            { "label": "Sigma: win_security_dcsync", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_dcsync.yml" },
+            { "label": "CISA AA20-296A — APT29 credential theft tradecraft", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa20-296a" }
+          ],
+          "fpr": "Legitimate DC replication uses the same protocol — differentiate solely by source IP. Maintain a precise and current DC IP inventory list. Any DRS traffic from a non-DC IP is a true positive with high confidence."
+        }
+      ]
+    },
+    "T1003.007": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1003.007-001",
+          "title": "/proc/[pid]/mem Read for In-Memory Credential Extraction on Linux",
+          "severity": "high",
+          "statement": "A threat actor on a Linux host is suspected of reading /proc/[pid]/mem of a credential-holding process (sshd, sudo, PAM, gnome-keyring) to extract cleartext passwords or session tokens from process memory. Hunt for non-root processes or unexpected binaries opening the /proc/[pid]/mem path of authentication daemons, as tools like LaZagne and Mimipenguin use this technique for agentless credential theft.",
+          "pivots": [
+            { "label": "Auditd — /proc/*/mem openat", "detail": "Auditd rule: -a always,exit -F arch=b64 -S openat,open -F path=/proc -F key=proc_mem_access. Alert on: auid!=0 (non-root) accessing /proc/[sshd_pid]/mem OR any process accessing /proc/[pid]/mem where the target pid belongs to sshd, sudo, or gnome-keyring-daemon." },
+            { "label": "ptrace against authentication daemons", "detail": "Auditd: syscall=ptrace AND a0=PTRACE_ATTACH (0x10) targeting sshd, sudo, or PAM-using processes. ptrace is the traditional method before /proc/mem became accessible. Also: /proc/[pid]/syscall reads indicating syscall interception." },
+            { "label": "LaZagne / Mimipenguin execution", "detail": "Process creation: execve of python3 / lazagne.py OR mimipenguin.sh OR similar script. LaZagne on Linux reads /proc/*/mem for Firefox, Chrome, OpenSSH, and gnome-keyring. File creation: output file in /tmp or /dev/shm by an unusual parent process." }
+          ],
+          "detection_logic": {
+            "sigma_title": "lnx_auditd_proc_mem_access",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_proc_mem_access.yml",
+            "query_hint": "auditd type=SYSCALL syscall=openat a2=*mem* key=proc_mem_access uid!=0 | alert"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable Linux kernel lockdown mode (lockdown=confidentiality) and restrict ptrace scope via /proc/sys/kernel/yama/ptrace_scope=2 (only admin ptrace). These significantly limit /proc/mem and ptrace-based attacks." },
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Ensure /proc/[pid]/mem is not accessible by unprivileged users via kernel configuration. Modern kernels with YAMA LSM provide ptrace restrictions. Enforce strict AppArmor or SELinux profiles for authentication daemons." }
+          ],
+          "tools": ["LaZagne (Linux)", "Mimipenguin", "GDB / gcore", "custom Python /proc scripts"],
+          "actors": ["Rocke Group", "TeamTNT", "Kinsing", "cloud-targeting cryptominer campaigns"],
+          "refs": [
+            { "label": "Sigma: lnx_auditd_proc_mem_access", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/" },
+            { "label": "LaZagne GitHub", "type": "report", "url": "https://github.com/AlessandroZ/LaZagne" },
+            { "label": "CISA AA23-278A — TeamTNT Linux targeting", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories" }
+          ],
+          "fpr": "GDB and strace legitimately use ptrace for debugging — restrict alerts to non-development hosts or when target PID belongs to sshd/sudo/PAM. Developer workstations may trigger /proc/mem access during debugging; allowlist by host role and user account."
+        },
+        {
+          "id": "HYP-T1003.007-002",
+          "title": "Core Dump Triggered for Offline Credential Extraction from Linux Process",
+          "severity": "medium",
+          "statement": "A threat actor on a Linux system is suspected of deliberately triggering a core dump of a credential-holding daemon (sshd, httpd, PAM) to capture process memory for offline credential extraction. Hunt for unusual core dump file creation by authentication-related processes, especially when followed by file collection into an archive or staging directory.",
+          "pivots": [
+            { "label": "Auditd — gcore or kill SIGSEGV", "detail": "Auditd: execve gcore [sshd_pid] by non-root user OR kill -11 [sshd_pid] followed by core dump creation. Also: ulimit -c unlimited set in shell session before a process crash." },
+            { "label": "Core dump file in staging path", "detail": "File creation: core or core.[pid] file in /tmp, /dev/shm, /var/tmp, or current working directory of an attacker-controlled process. Core dumps for sshd are typically 50–200 MB. Unusual size + location + parent process are the key indicators." },
+            { "label": "strings / grep on core dump", "detail": "Process creation: strings core.[pid] OR grep -a 'password\\|secret\\|key' core.[pid] by a non-developer user immediately after the core dump creation — indicates attacker searching the dump for plaintext credentials." }
+          ],
+          "detection_logic": {
+            "sigma_title": "lnx_auditd_core_dump_credential",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/",
+            "query_hint": "auditd type=CWD AND type=PATH name=*core* AND uid!=0 | followby execve=strings within 120s"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Disable core dumps for sensitive daemons via /etc/security/limits.conf (hard core 0) or systemd LimitCORE=0 in unit files for sshd, httpd, PAM. Core dump handlers (systemd-coredump, apport) should route dumps to a privileged directory." },
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Configure kernel core dump path to a root-only directory (echo '/var/core/core.%e.%p' > /proc/sys/kernel/core_pattern). Restrict core dump creation to root by default." }
+          ],
+          "tools": ["gcore (GDB suite)", "kill -11", "strings", "LaZagne"],
+          "actors": ["Rocke Group", "TeamTNT"],
+          "refs": [
+            { "label": "Auditd configuration for Linux credential hunting", "type": "report", "url": "https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/security_hardening/auditing-the-system_security-hardening" },
+            { "label": "DFIR Report — Linux core dump credential extraction", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Legitimate core dumps occur during application crashes — the key differentiators are: (1) deliberate triggering via gcore or signal, (2) immediate manual inspection of the core dump, (3) non-root user or non-system parent process. Automated crash reporting systems (apport, abrt) create core dumps but do not run strings against them."
+        }
+      ]
+    },
+    "T1003.008": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1003.008-001",
+          "title": "Direct /etc/shadow Access for Offline Password Hash Extraction",
+          "severity": "high",
+          "statement": "A threat actor with root or backup-level access on a Linux/macOS host is suspected of reading /etc/shadow directly to obtain hashed user passwords for offline cracking. Hunt for non-shadow-management processes (not passwd, useradd, usermod, chage) opening /etc/shadow with read access, particularly when followed by the file being copied to a staging location.",
+          "pivots": [
+            { "label": "Auditd — /etc/shadow read", "detail": "Auditd rule: -a always,exit -F arch=b64 -S open,openat -F path=/etc/shadow -F perm=r -k shadow_read. Alert on: comm not in (passwd,useradd,usermod,chage,shadow,chpasswd) AND the opening process is interactive shell (bash, sh, zsh) or a script. Especially alert if auid is not 0 (non-root interactive user with sudo)." },
+            { "label": "Copy or staging of shadow file", "detail": "Execve: cp /etc/shadow /tmp/.shadow OR cat /etc/shadow > /tmp/shadow.txt OR python3 -c 'open(\"/etc/shadow\")'. File creation: a new file with shadow-like content (colon-separated, $6$ SHA-512 hash format) in /tmp, /dev/shm, or home directory." },
+            { "label": "Transfer after staging", "detail": "Network: curl, wget, scp, or nc uploading data from the staging path to an external IP or C2 within minutes of the /etc/shadow access event. Correlate file creation timestamp with outbound connection." }
+          ],
+          "detection_logic": {
+            "sigma_title": "lnx_auditd_shadow_file_access",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_shadow_file_access.yml",
+            "query_hint": "auditd key=shadow_read NOT comm IN (passwd,useradd,usermod) | alert"
+          },
+          "mitigations": [
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "/etc/shadow should be owned by root:shadow with permissions 640. Regular users must never be able to read it directly. Audit permissions periodically — privilege escalation exploits sometimes change /etc/shadow permissions as a side effect." },
+            { "id": "M1027", "name": "Password Policies", "detail": "Use SHA-512 ($6$) hashing with high iteration counts (at least 5000 rounds). Long, complex passwords (20+ chars) make offline cracking infeasible even with shadow file access." }
+          ],
+          "tools": ["cat", "cp", "python scripts", "LaZagne (Linux)", "custom shell scripts"],
+          "actors": ["Rocke Group", "Kinsing", "TeamTNT", "opportunistic Linux rootkit operators"],
+          "refs": [
+            { "label": "Sigma: lnx_auditd_shadow_file_access", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/linux/auditd/lnx_auditd_shadow_file_access.yml" },
+            { "label": "CISA AA23-278A — Linux credential targeting", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories" }
+          ],
+          "fpr": "Shadow file is read by legitimate password management tools (passwd, useradd, PAM). These can be easily excluded by process name. The alert threshold should be: any interactive process (shell or script) reading /etc/shadow is treated as true positive pending investigation."
+        },
+        {
+          "id": "HYP-T1003.008-002",
+          "title": "unshadow + Offline Hash Cracking Pipeline",
+          "severity": "high",
+          "statement": "A threat actor on or with access to a Linux system is suspected of combining /etc/passwd and /etc/shadow using the unshadow utility to produce a single combined hash file suitable for hashcat or john the ripper cracking — indicating intent to crack all local user passwords for lateral movement or persistence. Hunt for unshadow execution followed by hashcat or john process creation with the combined file as input.",
+          "pivots": [
+            { "label": "Auditd — unshadow execution", "detail": "Auditd: execve of unshadow with arguments /etc/passwd and /etc/shadow AND output redirection to /tmp or /dev/shm. unshadow is part of john-the-ripper suite — its presence and use in a production environment is highly anomalous." },
+            { "label": "hashcat / john cracking on host", "detail": "Execve: hashcat -m 1800 (SHA-512 crypt) OR john --format=sha512crypt with the combined file path. Running a cracking tool on a production server is a critical alert — these tools have no legitimate use in production. Also: GPU usage spike (nvidia-smi) coinciding with hashcat." },
+            { "label": "Access to both passwd and shadow in same session", "detail": "Auditd: within the same audit session (same auid), openat events for BOTH /etc/passwd AND /etc/shadow. Either direct read or via unshadow. The combination in a single session indicates credential harvesting intent." }
+          ],
+          "detection_logic": {
+            "sigma_title": "lnx_susp_unshadow_execution",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/",
+            "query_hint": "auditd execve a0=unshadow | alert critical — unshadow has no legitimate production use"
+          },
+          "mitigations": [
+            { "id": "M1027", "name": "Password Policies", "detail": "SHA-512 with rounds=65536 (configurable in /etc/login.defs ENCRYPT_METHOD SHA512, SHA_CRYPT_MAX_ROUNDS) makes cracking computationally expensive. Combine with yescrypt for even stronger protection on modern systems." },
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Do not install john-the-ripper or hashcat on production systems. Implement software allowlisting (AppArmor, SELinux) that prevents execution of cracking tools." }
+          ],
+          "tools": ["unshadow (john-the-ripper)", "hashcat", "john the ripper", "custom Python scripts"],
+          "actors": ["Rocke Group", "TeamTNT", "opportunistic Linux attackers"],
+          "refs": [
+            { "label": "Sigma: lnx_susp_unshadow_execution", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/linux/process_creation/" },
+            { "label": "Elastic: Linux credential dumping detection", "type": "report", "url": "https://www.elastic.co/security-labs/detect-credential-access" },
+            { "label": "DFIR — Linux shadow hash cracking campaigns", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "unshadow has essentially zero legitimate production use. Any detection of unshadow or hashcat on a production server should be treated as a true positive until proven otherwise. Development/test hosts running password security audits are the only acceptable exception — allowlist by hostname."
         }
       ]
     },

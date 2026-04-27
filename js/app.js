@@ -1,4 +1,4 @@
-import { loadData, getData, clearCache } from './data-loader.js';
+import { loadData, getData, getIndex, clearCache } from './data-loader.js';
 import { loadHypDB } from './hyp-db.js';
 import { lookup, lookupAll, suggest, detectQueryType } from './lookup.js';
 import {
@@ -131,8 +131,18 @@ async function loadATTACK() {
           _pendingQuery = null;
         } else {
           const all = lookupAll();
-          if (all) { _lastResult = all; renderResults(applyFilters(all)); }
-          else showEmpty();
+          if (all) {
+            const d = getData();
+            all._stats = {
+              techniques:    d.techniques.filter(t => !t.sub).length,
+              subTechniques: d.techniques.filter(t => t.sub).length,
+              groups:        d.groups.length,
+              campaigns:     d.campaigns.length,
+              software:      (d.malware || []).length + (d.tools || []).length,
+            };
+            _lastResult = all;
+            renderResults(applyFilters(all));
+          } else showEmpty();
         }
       }
     });
