@@ -1,4 +1,5 @@
 import { getIndex, getData } from './data-loader.js';
+import { lookupByTag, suggestTags } from './hyp-db.js';
 
 // Returns: { type, query, actor?, items }
 // type: 'technique' | 'group' | 'malware' | 'tool' | 'campaign' | 'not-found'
@@ -55,7 +56,14 @@ export function lookup(query) {
 
   scored.sort((a, b) => b.score - a.score || a.e.id.localeCompare(b.e.id));
 
-  if (!scored.length) return { type: 'not-found', query: q };
+  if (!scored.length) {
+    const tag = lookupByTag(q);
+    if (tag) {
+      const items = tag.techIds.map(id => index.techById[id]).filter(Boolean);
+      if (items.length) return { type: 'technique', items, query: q, _tag: { type: tag.tagType, name: tag.tagName } };
+    }
+    return { type: 'not-found', query: q };
+  }
 
   const best = scored[0].e;
 
@@ -132,6 +140,13 @@ export function suggest(query, limit = 12) {
     seen.add(key);
     out.push({ id: e.id, name: e.obj.name, type: e.type });
     if (out.length >= limit) return out;
+  }
+
+  // Tag suggestions (curated tools / actors)
+  const tags = suggestTags(query, limit - out.length);
+  for (const t of tags) {
+    const key = `${t.type}:${t.id}`;
+    if (!seen.has(key)) { seen.add(key); out.push(t); }
   }
 
   return out;

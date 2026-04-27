@@ -695,6 +695,112 @@ body.light .hyp-search-btn { color: #fff; }
   .hyp-matrix-wrap { padding: 0 12px; }
 }
 
+/* ── Tag banner (tool/actor search result) ──────────────────── */
+.hyp-tag-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent2) 30%, transparent);
+  background: color-mix(in srgb, var(--accent2) 6%, transparent);
+  border-radius: 6px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.hyp-tag-banner-icon { font-size: 16px; color: var(--accent2); }
+.hyp-tag-banner-type {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--accent2);
+  background: color-mix(in srgb, var(--accent2) 15%, transparent);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.hyp-tag-banner-name {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  font-weight: 600;
+}
+.hyp-tag-banner-count { font-size: var(--fs-xs); color: var(--muted); margin-left: auto; }
+
+/* ── Data Component chips ───────────────────────────────────── */
+.hyp-ds-components { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.hyp-ds-chip {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color .12s, color .12s;
+  white-space: nowrap;
+}
+.hyp-ds-chip:hover { border-color: var(--accent2); color: var(--accent2); }
+.hyp-ds-chip.active { border-color: var(--accent2); color: var(--accent2); background: color-mix(in srgb, var(--accent2) 10%, transparent); }
+
+/* ── Severity badge tooltip ─────────────────────────────────── */
+.hyp-chyp-sev { position: relative; cursor: help; }
+.hyp-chyp-sev[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  white-space: nowrap;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  font-family: 'Share Tech Mono', monospace;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  border-radius: 4px;
+  z-index: 300;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+}
+.hyp-chyp-sev[data-tip]:hover::after { opacity: 1; }
+
+/* ── Export buttons ─────────────────────────────────────────── */
+.hyp-export-group {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+.hyp-export-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.hyp-export-btn:hover { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+/* ── Related technique chips ────────────────────────────────── */
+.hyp-related-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.hyp-related-chip {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color .12s, color .12s;
+}
+.hyp-related-chip:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── Detection Logic block ──────────────────────────────────── */
 .hyp-detect-logic {
   display: flex;

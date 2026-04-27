@@ -197,6 +197,14 @@ function initSearch() {
     if (!e.target.closest('#hyp-search-box')) hideAutocomplete();
   });
 
+  document.addEventListener('keydown', e => {
+    if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+      e.preventDefault();
+      input.focus();
+      input.select();
+    }
+  });
+
   ac?.addEventListener('click', e => {
     const item = e.target.closest('.hyp-ac-item');
     if (!item) return;

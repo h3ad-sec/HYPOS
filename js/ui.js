@@ -1,5 +1,51 @@
 import { generateHypothesis, groupByTactic, TACTIC_META } from './hypothesis.js';
-import { getCurated } from './hyp-db.js';
+import { getCurated, getRelated } from './hyp-db.js';
+import { getData } from './data-loader.js';
+
+let _techNameCache = null;
+function getTechName(id) {
+  if (!_techNameCache) {
+    const data = getData();
+    if (data) _techNameCache = Object.fromEntries(data.techniques.map(t => [t.id, t.name]));
+  }
+  return _techNameCache?.[id] || id;
+}
+
+window.__exportHyp = function(techId, format, btn) {
+  const curated = getCurated(techId);
+  if (!curated) return;
+  let text;
+  if (format === 'json') {
+    text = JSON.stringify({ technique: techId, hypotheses: curated }, null, 2);
+  } else {
+    const lines = [`# ${techId} — Curated Hunt Hypotheses`, `> Source: HYPOS by H3AD-SEC`, ''];
+    for (const c of curated) {
+      lines.push(`## ${c.id} · ${c.title}`, `**Severity:** ${(c.severity || 'high').toUpperCase()}`, '');
+      lines.push(`**Statement:**\n${c.statement}`, '');
+      if (c.pivots?.length) {
+        lines.push('**Hunt Pivots:**');
+        for (const p of c.pivots) lines.push(`- **${p.label}:** ${p.detail}`);
+        lines.push('');
+      }
+      if (c.detection_logic?.query_hint) {
+        lines.push('**Detection Logic:**', '```', c.detection_logic.query_hint, '```', '');
+        if (c.detection_logic.sigma_url) lines.push(`Sigma: ${c.detection_logic.sigma_url}`, '');
+      }
+      if (c.mitigations?.length) {
+        lines.push('**Mitigations:**');
+        for (const m of c.mitigations) lines.push(`- ${m.id} ${m.name}: ${m.detail}`);
+        lines.push('');
+      }
+      if (c.fpr) lines.push(`**FPR:** ${c.fpr}`, '');
+      lines.push('---', '');
+    }
+    text = lines.join('\n');
+  }
+  navigator.clipboard.writeText(text).catch(() => {});
+  const orig = btn.textContent;
+  btn.textContent = '✓ Copied';
+  setTimeout(() => { btn.textContent = orig; }, 1600);
+};
 
 const $ = id => document.getElementById(id);
 
@@ -89,7 +135,7 @@ export function renderResults(result) {
   const total = result._total;
 
   if (result.type === 'technique') {
-    renderTechniqueResults(hypotheses, result.query, total);
+    renderTechniqueResults(hypotheses, result.query, total, result._tag);
   } else if (result.type === 'all') {
     renderAllResults(result, hypotheses, total);
   } else {
@@ -97,11 +143,20 @@ export function renderResults(result) {
   }
 }
 
-function renderTechniqueResults(hypotheses, query, total) {
+function renderTechniqueResults(hypotheses, query, total, tag) {
   const parent = hypotheses.find(h => !h.isSub);
   const subs   = hypotheses.filter(h => h.isSub);
 
   let html = `<div class="hyp-results">`;
+  if (tag) {
+    const icon = tag.type === 'tool' ? '⬡' : '◈';
+    html += `<div class="hyp-tag-banner">
+      <span class="hyp-tag-banner-icon">${icon}</span>
+      <span class="hyp-tag-banner-type">${escapeHtml(tag.type.toUpperCase())}</span>
+      <span class="hyp-tag-banner-name">${escapeHtml(tag.name)}</span>
+      <span class="hyp-tag-banner-count">${hypotheses.length} technique${hypotheses.length !== 1 ? 's' : ''} matched</span>
+    </div>`;
+  }
   html += renderSummaryBar(hypotheses.length, `hypothesis${hypotheses.length !== 1 ? 'es' : ''} for "${escapeHtml(query)}"`, total);
 
   if (parent) html += `<div class="hyp-tactic-cards">${renderCard(parent)}</div>`;
@@ -148,7 +203,8 @@ function renderActorResults(result, hypotheses, total) {
 
 function renderAllResults(result, hypotheses, total) {
   const groups = groupByTactic(hypotheses);
-  const curatedCount = hypotheses.filter(h => !!getCurated(h.id)).length;
+  const curatedTechCount = hypotheses.filter(h => !!getCurated(h.id)).length;
+  const curatedHypCount  = hypotheses.reduce((n, h) => n + (getCurated(h.id)?.length || 0), 0);
   const s = result._stats || {};
 
   let html = `<div class="hyp-matrix-wrap">`;
@@ -161,7 +217,8 @@ function renderAllResults(result, hypotheses, total) {
       <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.groups || '—'}</span><span class="hyp-matrix-stat-lbl">Groups</span></span>
       <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.campaigns || '—'}</span><span class="hyp-matrix-stat-lbl">Campaigns</span></span>
       <span class="hyp-matrix-stat-item"><span class="hyp-matrix-stat-val">${s.software || '—'}</span><span class="hyp-matrix-stat-lbl">Software</span></span>
-      <span class="hyp-matrix-stat-item accent"><span class="hyp-matrix-stat-val">${curatedCount}</span><span class="hyp-matrix-stat-lbl">Curated</span></span>
+      <span class="hyp-matrix-stat-item accent"><span class="hyp-matrix-stat-val">${curatedTechCount}</span><span class="hyp-matrix-stat-lbl">Curated Techniques</span></span>
+      <span class="hyp-matrix-stat-item accent"><span class="hyp-matrix-stat-val">${curatedHypCount}</span><span class="hyp-matrix-stat-lbl">Curated Hypotheses</span></span>
     </div>
     <div class="hyp-matrix-legend">
       <span class="hyp-matrix-legend-item"><span class="hyp-matrix-legend-dot curated"></span>Curated hypothesis</span>
@@ -245,6 +302,7 @@ function renderCard(h) {
     : '<span class="hyp-platform-chip" style="color:var(--muted)">—</span>';
 
   const footer = buildFooter(h);
+  const dsComponentChips = buildDsComponentChips(h.dataSources);
 
   return `<div class="hyp-card">
     <div class="hyp-card-head">
@@ -258,7 +316,7 @@ function renderCard(h) {
         <div class="hyp-hypothesis-text">${escapeHtml(h.hypothesis)}</div>
       </div>
       <div class="hyp-meta-grid">
-        ${dsList ? `<div><div class="hyp-section-lbl">DATA SOURCES</div><ul class="hyp-ds-list">${dsList}</ul></div>` : ''}
+        ${dsComponentChips ? `<div><div class="hyp-section-lbl">DATA COMPONENTS</div><div class="hyp-ds-components">${dsComponentChips}</div></div>` : ''}
         <div>
           <div class="hyp-section-lbl">PLATFORMS</div>
           <div class="hyp-platform-chips">${platformChips}</div>
@@ -305,11 +363,18 @@ function renderCuratedCard(h, curated) {
       </span>`
     ).join('');
 
+    const SEV_TIP = {
+      critical: 'Very High Prevalence · Hard to Detect · Severe Impact',
+      high:     'High Prevalence · Moderate Detection Difficulty · Significant Impact',
+      medium:   'Medium Prevalence · Lower Detection Difficulty · Moderate Impact',
+      low:      'Low Prevalence · Easier to Detect · Limited Impact',
+    };
+
     return `<div class="hyp-chyp">
       <div class="hyp-chyp-head">
         <span class="hyp-chyp-id">${escapeHtml(c.id)}</span>
         <span class="hyp-chyp-title">${escapeHtml(c.title)}</span>
-        <span class="hyp-chyp-sev ${escapeAttr(sev)}">${sev.toUpperCase()}</span>
+        <span class="hyp-chyp-sev ${escapeAttr(sev)}" data-tip="${escapeAttr(SEV_TIP[sev] || '')}">${sev.toUpperCase()}</span>
       </div>
       <div class="hyp-chyp-stmt">${escapeHtml(c.statement)}</div>
       ${pivotRows ? `<div class="hyp-section-lbl" style="margin-top:6px">HUNT PIVOTS</div><div class="hyp-pivot-list">${pivotRows}</div>` : ''}
@@ -340,17 +405,27 @@ function renderCuratedCard(h, curated) {
 
   const footer = buildFooter(h);
 
+  const dsComponentChips = buildDsComponentChips(h.dataSources);
+  const related = getRelated(h.id).slice(0, 6);
+  const relatedChips = related.map(id =>
+    `<span class="hyp-related-chip" onclick="window.__hypSearch('${escapeAttr(id)}')" title="${escapeAttr(getTechName(id))}">${escapeHtml(id)}</span>`
+  ).join('');
+
   return `<div class="hyp-card curated">
     <div class="hyp-card-head">
       <span class="hyp-card-id">${escapeHtml(h.id)}</span>
       <span class="hyp-card-name">${escapeHtml(h.name)}</span>
       <span class="hyp-curated-badge" style="margin-left:auto">★ CURATED</span>
       <span class="hyp-tactic-pill" style="background:${escapeAttr(h.tacticColor)};margin-left:0">${escapeHtml(h.tacticLabel)}</span>
+      <div class="hyp-export-group">
+        <button class="hyp-export-btn" onclick="window.__exportHyp('${escapeAttr(h.id)}','markdown',this)">MD</button>
+        <button class="hyp-export-btn" onclick="window.__exportHyp('${escapeAttr(h.id)}','json',this)">JSON</button>
+      </div>
     </div>
     <div class="hyp-card-body">
       <div class="hyp-curated-hyps">${hypSections}</div>
       <div class="hyp-meta-grid">
-        ${dsList ? `<div><div class="hyp-section-lbl">DATA SOURCES</div><ul class="hyp-ds-list">${dsList}</ul></div>` : ''}
+        ${dsComponentChips ? `<div><div class="hyp-section-lbl">DATA COMPONENTS</div><div class="hyp-ds-components">${dsComponentChips}</div></div>` : ''}
         <div>
           <div class="hyp-section-lbl">PLATFORMS</div>
           <div class="hyp-platform-chips">${platformChips}</div>
@@ -360,6 +435,7 @@ function renderCuratedCard(h, curated) {
       ${actorChips ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>` : ''}
       ${h.detection ? `<div><div class="hyp-section-lbl">DETECTION FOCUS</div><div class="hyp-detect-text">${escapeHtml(h.detection)}</div></div>` : ''}
       ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}
+      ${relatedChips ? `<div><div class="hyp-section-lbl">RELATED TECHNIQUES</div><div class="hyp-related-chips">${relatedChips}</div></div>` : ''}
     </div>
     ${footer}
   </div>`;
@@ -397,7 +473,7 @@ export function renderSuggestions(suggestions) {
   if (!suggestions.length) { ac.classList.remove('open'); return; }
 
   _acSelected = -1;
-  const typeColors = { technique: 'var(--accent)', group: 'var(--accent2)', malware: 'var(--red)', tool: 'var(--t-exec)', campaign: 'var(--t-persist)' };
+  const typeColors = { technique: 'var(--accent)', group: 'var(--accent2)', malware: 'var(--red)', tool: 'var(--t-exec)', campaign: 'var(--t-persist)', actor: 'var(--accent2)' };
 
   ac.innerHTML = suggestions.map((s, i) =>
     `<div class="hyp-ac-item" data-idx="${i}" data-val="${escapeAttr(s.id)}">
@@ -446,6 +522,16 @@ export function updateDetectBadge(query) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────
+
+function buildDsComponentChips(dataSources) {
+  if (!dataSources || !dataSources.length) return '';
+  return dataSources.slice(0, 10).map(ds => {
+    const parts     = ds.split(':');
+    const source    = parts[0].trim();
+    const component = parts[1]?.trim() || source;
+    return `<span class="hyp-ds-chip" onclick="window.__toggleSource('${escapeAttr(source)}')" title="Filter by: ${escapeAttr(source)}">${escapeHtml(component)}</span>`;
+  }).join('');
+}
 
 function renderTerminal(lines) {
   const rows = lines.map(l =>
