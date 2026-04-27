@@ -1,6 +1,6 @@
 import { generateHypothesis, groupByTactic, TACTIC_META } from './hypothesis.js';
 import { getCurated, getRelated, getCuratedStats } from './hyp-db.js';
-import { getData } from './data-loader.js';
+import { getData, getUsedBy } from './data-loader.js';
 
 let _techNameCache = null;
 function getTechName(id) {
@@ -304,6 +304,18 @@ function renderCard(h) {
   const dsComponentChips = buildDsComponentChips(h.dataSources, h.analytics);
   const analyticsHtml    = buildAnalyticsSection(h.dataSources, h.analytics);
 
+  const usedBy = getUsedBy(h.id);
+  const CAP = 12;
+  const groupChips = usedBy.groups.slice(0, CAP).map(a =>
+    `<span class="hyp-actor-chip" onclick="window.__hypSearch('${escapeAttr(a.name)}')">${escapeHtml(a.name)}</span>`
+  ).join('') + (usedBy.groups.length > CAP ? `<span class="hyp-actor-chip" style="opacity:.55">+${usedBy.groups.length - CAP} more</span>` : '');
+  const malwareChips = usedBy.malware.slice(0, CAP).map(a =>
+    `<span class="hyp-actor-chip" onclick="window.__hypSearch('${escapeAttr(a.name)}')">${escapeHtml(a.name)}</span>`
+  ).join('') + (usedBy.malware.length > CAP ? `<span class="hyp-actor-chip" style="opacity:.55">+${usedBy.malware.length - CAP} more</span>` : '');
+  const stixToolChips = usedBy.tools.slice(0, CAP).map(a =>
+    `<span class="hyp-tool-chip" onclick="window.__hypSearch('${escapeAttr(a.name)}')">${escapeHtml(a.name)}</span>`
+  ).join('') + (usedBy.tools.length > CAP ? `<span class="hyp-tool-chip" style="opacity:.55">+${usedBy.tools.length - CAP} more</span>` : '');
+
   return `<div class="hyp-card">
     <div class="hyp-card-head">
       <span class="hyp-card-id">${escapeHtml(h.id)}</span>
@@ -322,6 +334,9 @@ function renderCard(h) {
           <div class="hyp-platform-chips">${platformChips}</div>
         </div>
       </div>
+      ${groupChips   ? `<div><div class="hyp-section-lbl">KNOWN GROUPS</div><div class="hyp-actor-chips">${groupChips}</div></div>`   : ''}
+      ${malwareChips ? `<div><div class="hyp-section-lbl">KNOWN MALWARE</div><div class="hyp-actor-chips">${malwareChips}</div></div>` : ''}
+      ${stixToolChips ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${stixToolChips}</div></div>` : ''}
       ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
       <div>
         <div class="hyp-section-lbl">DETECTION FOCUS</div>

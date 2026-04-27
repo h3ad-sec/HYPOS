@@ -56,8 +56,11 @@ export async function loadData(onProgress) {
   return _data;
 }
 
-export function getData()  { return _data;  }
-export function getIndex() { return _index; }
+export function getData()    { return _data;  }
+export function getIndex()   { return _index; }
+export function getUsedBy(techId) {
+  return _index?.techUsedBy?.[techId] || { groups: [], malware: [], tools: [] };
+}
 
 function getMitreId(obj) {
   const r = (obj.external_references || []).find(x => x.source_name === 'mitre-attack');
@@ -216,6 +219,19 @@ function buildIndex(data) {
   const techById = {};
   for (const t of data.techniques) techById[t.id] = t;
 
+  const techUsedBy = {};
+  const addUsedBy = (list, field) => {
+    for (const a of list) {
+      for (const tid of a.techs) {
+        if (!techUsedBy[tid]) techUsedBy[tid] = { groups: [], malware: [], tools: [] };
+        techUsedBy[tid][field].push({ id: a.id, name: a.name });
+      }
+    }
+  };
+  addUsedBy(data.groups,  'groups');
+  addUsedBy(data.malware, 'malware');
+  addUsedBy(data.tools,   'tools');
+
   const entries = [];
 
   for (const t of data.techniques) {
@@ -238,7 +254,7 @@ function buildIndex(data) {
   addActors(data.tools);
   addActors(data.campaigns);
 
-  return { techById, entries };
+  return { techById, entries, techUsedBy };
 }
 
 function cacheData(data) {
