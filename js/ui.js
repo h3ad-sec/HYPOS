@@ -337,6 +337,7 @@ function renderCard(h) {
       ${groupChips   ? `<div><div class="hyp-section-lbl">KNOWN GROUPS</div><div class="hyp-actor-chips">${groupChips}</div></div>`   : ''}
       ${malwareChips ? `<div><div class="hyp-section-lbl">KNOWN MALWARE</div><div class="hyp-actor-chips">${malwareChips}</div></div>` : ''}
       ${stixToolChips ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${stixToolChips}</div></div>` : ''}
+      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<span class="hyp-mitigation-chip" title="${escapeAttr(m.id)}"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</span>`).join('')}</div></div>` : ''}
       ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
       <div>
         <div class="hyp-section-lbl">DETECTION FOCUS</div>
@@ -450,6 +451,7 @@ function renderCuratedCard(h, curated) {
       </div>
       ${toolChips  ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${toolChips}</div></div>` : ''}
       ${actorChips ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>` : ''}
+      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<span class="hyp-mitigation-chip" title="${escapeAttr(m.id)}"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</span>`).join('')}</div></div>` : ''}
       ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
       ${h.detection ? `<div><div class="hyp-section-lbl">DETECTION FOCUS</div><div class="hyp-detect-text">${escapeHtml(h.detection)}</div></div>` : ''}
       ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}

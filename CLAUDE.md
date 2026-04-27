@@ -96,7 +96,7 @@ HYPOS/
 ├── css/style.css           # Full design system + HYPOS-specific components
 ├── js/
 │   ├── app.js              # Init, search handlers, filters, theme, matrix canvas, nav drawer
-│   ├── data-loader.js      # STIX fetch, in-browser processing, localStorage cache (hypos_v4)
+│   ├── data-loader.js      # STIX fetch, in-browser processing, localStorage cache (hypos_v5)
 │   ├── lookup.js           # Query type detection, search, autocomplete, tag fallback
 │   ├── hypothesis.js       # Hypothesis generation from technique objects + tactic meta
 │   ├── hyp-db.js           # Curated hypotheses DB loader, tag index, related map
@@ -124,7 +124,7 @@ Technique fields: `id, name, desc, sentence, tactics, platforms, ds, detect, ana
 
 Actor fields: `type, id, name, aliases, desc, url, techs`
 
-Cache key: `hypos_v4` in localStorage. TTL: 7 days. Bump version to invalidate all cached data when schema changes.
+Cache key: `hypos_v5` in localStorage. TTL: 7 days. Bump version to invalidate all cached data when schema changes.
 
 ### lookup.js
 
@@ -203,7 +203,7 @@ H3AD-HUNT gets a dropdown with HYPOS (same pattern as H3AD-X › VERDIKT):
 - `window.__hypSearch(id)` — global search trigger for inline onclick in rendered cards.
 - `window.__hyposLookup` — exposes `{ detectQueryType }` for ui.js badge updates.
 - URL param `?q=T1003` — loads and runs search on page init.
-- localStorage cache key `hypos_v4` — bump version string to invalidate all cached data.
+- localStorage cache key `hypos_v5` — bump version string to invalidate all cached data.
 - `window.__exportHyp(techId, format, btn)` — clipboard export for curated cards (MD or JSON).
 - `/` keyboard shortcut focuses search bar (unless in input/textarea/select).
 - DATA SOURCE filter row auto-hides if no data sources are present in loaded data.

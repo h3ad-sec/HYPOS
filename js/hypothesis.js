@@ -102,6 +102,7 @@ export function generateHypothesis(technique) {
     subs:        technique.subs || [],
     url:         technique.url,
     desc:        technique.desc,
+    mits:        technique.mits || [],
   };
 }
 

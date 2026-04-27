@@ -1,6 +1,6 @@
 const STIX_URL  = 'https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json';
 const LOCAL_URL = './data/attack.json';
-const CACHE_KEY = 'hypos_v4';
+const CACHE_KEY = 'hypos_v5';
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 let _data  = null;
@@ -124,6 +124,23 @@ function processBundle(bundle) {
     if (analytic) techAnalyticMap[tid][info.str] = analytic;
   }
 
+  const mitInfoByStix = {};
+  for (const obj of bundle.objects) {
+    if (obj.type !== 'course-of-action') continue;
+    const id = getMitreId(obj);
+    if (id) mitInfoByStix[obj.id] = { id, name: obj.name };
+  }
+
+  const techMitMap = {};
+  for (const obj of bundle.objects) {
+    if (obj.type !== 'relationship' || obj.relationship_type !== 'mitigates') continue;
+    const mit = mitInfoByStix[obj.source_ref];
+    if (!mit) continue;
+    const tid = obj.target_ref;
+    if (!techMitMap[tid]) techMitMap[tid] = [];
+    if (!techMitMap[tid].find(m => m.id === mit.id)) techMitMap[tid].push(mit);
+  }
+
   const techByStix  = {};
   const actorByStix = {};
   const techniques  = [];
@@ -154,6 +171,7 @@ function processBundle(bundle) {
         ds,
         detect:    trunc(obj.x_mitre_detection, 400),
         analytics: techAnalyticMap[obj.id] || {},
+        mits: (techMitMap[obj.id] || []).slice(0, 10),
         sub: !!(obj.x_mitre_is_subtechnique),
         pid: null,
         subs: [],
