@@ -13,6 +13,15 @@
             { "label": "CallTrace anomaly", "detail": "CallTrace containing UNKNOWN = direct syscall (NanoDump, custom loaders). CallTrace ending in dbgcore.dll or dbghelp.dll = debugging API path used by ProcDump and older Mimikatz. Modern Mimikatz routes through ntdll.dll alone." },
             { "label": "Timing & frequency", "detail": "LSASS access >30 min after the last user logon, from a process with no prior LSASS access history, or clustered with 5+ unique source processes within 10 minutes — all significantly raise confidence." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_access_win_lsass_memdump",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_access/proc_access_win_lsass_memdump.yml",
+            "query_hint": "EventCode=10 TargetImage=*lsass* GrantedAccess IN (0x1010,0x1038,0x1400,0x1410,0x1fffff) SourceImage NOT IN (WerFault.exe,Sysmon64.exe,MsMpEng.exe)"
+          },
+          "mitigations": [
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Enable Windows Credential Guard to move LSASS secrets into VSM — even with a valid handle, credential material is inaccessible." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable LSASS RunAsPPL (HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\RunAsPPL=1) and Sysmon process access auditing to catch credential-access handle attempts in real time." }
+          ],
           "tools": ["Mimikatz", "NanoDump", "Cobalt Strike", "Windows Credential Editor", "Outflank-C2"],
           "actors": ["APT28", "APT29", "Volt Typhoon", "Carbanak", "LockBit"],
           "refs": [
@@ -31,6 +40,15 @@
             { "label": "Sysmon EID 1", "detail": "Image = rundll32.exe AND CommandLine contains (comsvcs.dll OR comsvcs) AND CommandLine contains (MiniDump OR #24 OR #65560 OR full)" },
             { "label": "Sysmon EID 10", "detail": "TargetImage = lsass.exe AND CallTrace contains comsvcs.dll AND GrantedAccess = 0x1fffff. Correlate with an EID 1 for rundll32 within 2 seconds of the access event." },
             { "label": "PowerShell variant", "detail": "Also hunt EID 4104 ScriptBlockText contains 'MiniDump' AND 'comsvcs'." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_rundll32_comsvcs_minidump",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_comsvcs_minidump.yml",
+            "query_hint": "EventCode=1 Image=*rundll32.exe CommandLine=*comsvcs* CommandLine=*(MiniDump|#24|#65560)*"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Block rundll32.exe from invoking comsvcs.dll MiniDumpW via WDAC or AppLocker. Enable LSASS RunAsPPL to prevent the dump from completing." },
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Enable Credential Guard to render the resulting dump file useless for credential extraction — LSASS secrets remain protected in VSM." }
           ],
           "tools": ["comsvcs.dll (LOLBIN)", "rundll32.exe", "PowerShell"],
           "actors": ["Volt Typhoon", "APT28", "PYSA", "Akira"],
@@ -51,6 +69,15 @@
             { "label": "Parent process", "detail": "ProcDump launched from cmd.exe, powershell.exe, wmiexec, or psexec parent is highly suspicious. Execution from a UNC path indicates remote tool staging." },
             { "label": "Sysmon EID 11", "detail": "File created by procdump.exe with .dmp extension in a temp or user-writable directory within seconds of process creation confirms a successful dump." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_sysinternals_procdump_lsass",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sysinternals_procdump_lsass.yml",
+            "query_hint": "EventCode=1 Image=*(procdump|procdump64).exe CommandLine=*lsass*"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Block procdump.exe from targeting lsass.exe via AppLocker publisher rules. Enable LSASS RunAsPPL so ProcDump receives access denied." },
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Enable Credential Guard — even with a dump file, Credential Guard-protected secrets appear as encrypted blobs that cannot be decrypted offline." }
+          ],
           "tools": ["ProcDump", "ProcDump64"],
           "actors": ["LockBit 3.0", "BlackCat/ALPHV", "FIN6", "FIN7"],
           "refs": [
@@ -69,6 +96,15 @@
             { "label": "Sysmon EID 11", "detail": "TargetFilename endswith .dmp AND (TargetFilename contains lsass OR Image endswith taskmgr.exe OR Image endswith procdump.exe OR Image endswith rundll32.exe) AND path matches (%TEMP%\\* OR C:\\Windows\\Temp\\* OR C:\\ProgramData\\*)" },
             { "label": "File size heuristic", "detail": "LSASS memory dumps are typically 30–150 MB. A large .dmp file in %TEMP% or AppData created outside a crash scenario is a strong indicator — correlate file size with creation process." },
             { "label": "Task Manager variant", "detail": "Image = taskmgr.exe AND TargetFilename contains lsass AND TargetFilename endswith .dmp — covers the low-tech manual dump technique documented in PYSA/Mespinoza campaigns." }
+          ],
+          "detection_logic": {
+            "sigma_title": "file_event_win_lsass_dump_file_creation",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/file/file_event/file_event_win_lsass_dump_file_creation.yml",
+            "query_hint": "EventCode=11 TargetFilename=*lsass*.dmp TargetFilename path IN (%TEMP%,C:\\Windows\\Temp,C:\\ProgramData) Image NOT IN (WerFault.exe)"
+          },
+          "mitigations": [
+            { "id": "M1043", "name": "Credential Access Protection", "detail": "Enable Credential Guard — a dump file containing VSM-protected material yields no usable credentials without the VSM key." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Configure EDR file-creation rules alerting on large .dmp files in temp paths by non-WerFault processes; pair with LSASS handle auditing to correlate the full chain." }
           ],
           "tools": ["Task Manager (LOLBIN)", "ProcDump", "comsvcs.dll", "Mimikatz sekurlsa::minidump"],
           "actors": ["PYSA/Mespinoza", "Akira", "Conti"],
@@ -701,6 +737,15 @@
             { "label": "Decode and inspect", "detail": "Decode the -enc argument (Base64). If the plaintext contains IEX, DownloadString, Invoke-*, reflection patterns, or AmsiUtils — escalate immediately." },
             { "label": "String length heuristic", "detail": "Legitimate admin encoded commands are typically <500 characters. Payloads >1,500 characters post-Base64 often represent multi-layer compressed or obfuscated payloads." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_powershell_encoded_cmd",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_encoded_cmd.yml",
+            "query_hint": "EventCode=1 Image=*powershell.exe CommandLine=*(-enc|-EncodedCommand)* CommandLine=*(-nop|bypass|hidden)*"
+          },
+          "mitigations": [
+            { "id": "M1042", "name": "Disable or Remove Feature or Program", "detail": "Enable PowerShell Constrained Language Mode via AppLocker or WDAC to block reflection-based attacks. Disable PowerShell v2 (Remove-WindowsFeature MicrosoftWindowsPowerShellV2)." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable Script Block Logging (EID 4104) and Module Logging via GPO. Pair with AMSI integration for runtime payload inspection even when -enc is used." }
+          ],
           "tools": ["Empire", "Cobalt Strike Beacon", "Metasploit", "Nishang"],
           "actors": ["APT28", "APT29", "APT33", "APT41", "Emotet", "LockBit"],
           "refs": [
@@ -719,6 +764,15 @@
             { "label": "PS EID 4104 — primary", "detail": "ScriptBlockText contains (DownloadString OR DownloadData OR WebClient) AND ScriptBlockText contains (IEX OR Invoke-Expression OR &([scriptblock]::Create))" },
             { "label": "Network correlation", "detail": "Correlate EID 4104 match with Sysmon EID 3 from powershell.exe to the same destination within ±5 seconds. Non-browser PS network connections to external IPs or newly-registered domains warrant automatic escalation." },
             { "label": "Obfuscated variant", "detail": "Attackers split 'DownloadString' across variables or use character arrays. Hunt for Net.WebClient in ScriptBlock text as a stable anchor and flag any block followed within 5 seconds by a second high-entropy ScriptBlock." }
+          ],
+          "detection_logic": {
+            "sigma_title": "posh_ps_web_request",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_web_request.yml",
+            "query_hint": "EventCode=4104 ScriptBlockText=*(DownloadString|DownloadData|WebClient)* ScriptBlockText=*(IEX|Invoke-Expression)*"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Restrict outbound PowerShell access via application proxy — require scripts to route through an authenticated proxy that logs all connections." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable Script Block Logging and enforce Constrained Language Mode. Block Invoke-Expression with downloaded content via AMSI custom rules or EDR behavioral detection." }
           ],
           "tools": ["Cobalt Strike", "Empire", "Metasploit web_delivery", "Emotet loaders"],
           "actors": ["APT29", "APT41", "Emotet", "QBot", "Black Basta"],
@@ -739,6 +793,15 @@
             { "label": "PS EID 4104 — obfuscated", "detail": "ScriptBlockText contains [Ref].Assembly.GetType AND System.Management.Automation AND SetValue. Also hunt character-array construction of 'AmsiUtils' via [cHAr] concatenation or -replace/-join patterns." },
             { "label": "Behavioral follow-up", "detail": "AMSI bypass is almost always followed within seconds by a second ScriptBlock executing the concealed payload. A gap <5 seconds between AmsiUtils ScriptBlock and a high-entropy second block = confirmed evasion chain." }
           ],
+          "detection_logic": {
+            "sigma_title": "posh_ps_amsi_bypass",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_amsi_bypass.yml",
+            "query_hint": "EventCode=4104 ScriptBlockText=*(AmsiUtils|amsiInitFailed)* OR ScriptBlockText=*(System.Management.Automation*SetValue*amsi)*"
+          },
+          "mitigations": [
+            { "id": "M1049", "name": "Antivirus/Antimalware", "detail": "Keep AMSI provider up to date. Deploy EDR with kernel-level ETW monitoring that detects AMSI patching regardless of user-mode hook state." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable PowerShell Constrained Language Mode via WDAC — CLM prevents the .NET reflection calls used by most AMSI bypass techniques." }
+          ],
           "tools": ["Invisi-Shell", "AMSI.fail payloads", "Cobalt Strike", "Empire"],
           "actors": ["APT29", "Turla", "FIN7", "ransomware pre-loaders"],
           "refs": [
@@ -758,6 +821,15 @@
             { "label": "Lateral movement", "detail": "ScriptBlockText contains (Invoke-PsExec OR Invoke-WMICommand OR Invoke-SMBExec OR Invoke-TheHash OR Enter-PSSession)" },
             { "label": "Discovery & enumeration", "detail": "ScriptBlockText contains (Invoke-BloodHound OR Get-DomainAdmin OR Find-DomainShares OR Invoke-UserHunter OR Get-NetComputer OR Get-NetUser)" },
             { "label": "Defense evasion", "detail": "ScriptBlockText contains (Set-MpPreference -Disable* OR Remove-MpPreference OR Invoke-BypassUAC OR Invoke-TokenManipulation OR Add-Persistence)" }
+          ],
+          "detection_logic": {
+            "sigma_title": "posh_ps_malicious_commandlets",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_malicious_commandlets.yml",
+            "query_hint": "EventCode=4104 ScriptBlockText IN (Invoke-Mimikatz,Invoke-Kerberoast,Invoke-BloodHound,Invoke-DCSync,Get-DomainAdmin,Invoke-PsExec)"
+          },
+          "mitigations": [
+            { "id": "M1042", "name": "Disable or Remove Feature or Program", "detail": "Remove PowerShell v2 and enforce Constrained Language Mode. PowerView and PowerSploit cmdlets fail under CLM as they require full language mode." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Apply tiered administration to limit Domain Admin rights. Kerberoasting and DCSync are only viable when high-value accounts have exploitable configurations." }
           ],
           "tools": ["PowerView", "Mimikatz (PS)", "Empire", "Nishang", "BloodHound", "PowerSploit"],
           "actors": ["APT28", "APT29", "APT33", "Akira", "LockBit", "Black Basta"],
@@ -782,6 +854,15 @@
             { "label": "Sysmon EID 10 correlation", "detail": "SourceImage opens handle to TargetImage with GrantedAccess = 0x1fffff (PROCESS_ALL_ACCESS) or 0x43a (PROCESS_CREATE_THREAD + PROCESS_VM_WRITE + PROCESS_VM_OPERATION + PROCESS_VM_READ + QUERY_INFORMATION) within seconds of EID 8." },
             { "label": "StartAddress heuristic", "detail": "StartAddress in EID 8 pointing to an unbacked memory region (not associated with any loaded module) = shellcode injection. Correlate with Sysmon EID 3 network connection from the target process to a C2 IP within 60 seconds." }
           ],
+          "detection_logic": {
+            "sigma_title": "create_remote_thread_win_generic_injection",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/create_remote_thread/create_remote_thread_win_generic_injection.yml",
+            "query_hint": "EventCode=8 SourceImage NOT IN (known EDR/AV) TargetImage IN (explorer.exe,svchost.exe,notepad.exe) | correlate EventCode=3 outbound from TargetImage within 60s"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Deploy EDR with kernel-level process injection detection. Enable Arbitrary Code Guard (ACG) and Code Integrity Guard (CIG) on browser and high-value processes via Windows Exploit Guard." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Enable AppLocker or WDAC to prevent unsigned code from running. HVCI prevents unsigned code execution in kernel memory, limiting injector capabilities." }
+          ],
           "tools": ["Cobalt Strike", "Metasploit", "meterpreter", "Donut", "Injection frameworks"],
           "actors": ["APT28", "APT29", "APT41", "FIN7", "Lazarus Group"],
           "refs": [
@@ -801,6 +882,15 @@
             { "label": "Image mismatch (EDR)", "detail": "EDR telemetry: ProcessImage (from PE header in memory) does not match ProcessPath (on-disk path). This is the definitive indicator of hollow process — requires EDR with memory scanning capability." },
             { "label": "Sysmon EID 3 anomaly", "detail": "svchost.exe or notepad.exe initiating outbound TCP connections to non-Microsoft IPs on unusual ports (4444, 8080, 443 with non-browser UA) is a strong behavioral indicator of a hollowed process executing C2 traffic." }
           ],
+          "detection_logic": {
+            "sigma_title": "create_remote_thread_win_susp_targets",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/create_remote_thread/create_remote_thread_win_susp_targets.yml",
+            "query_hint": "EventCode=8 TargetImage IN (svchost.exe,notepad.exe,explorer.exe) | correlate EventCode=3 outbound from same TargetImage within 60s"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable EDR memory scanning to detect PE headers in non-module-backed memory regions. Arbitrary Code Guard (ACG) prevents dynamic code patching in protected processes." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "WDAC with HVCI blocks most process hollowing by preventing unsigned code from executing — the injected PE cannot meet code integrity requirements." }
+          ],
           "tools": ["Cobalt Strike", "meterpreter", "RunPE", "GH0stRAT", "NjRAT"],
           "actors": ["APT41", "Lazarus Group", "Kimsuky", "TA505"],
           "refs": [
@@ -819,6 +909,15 @@
             { "label": "Sysmon EID 7", "detail": "ImageLoaded path matches (%TEMP%\\* OR %APPDATA%\\* OR C:\\Users\\*\\Downloads\\* OR C:\\ProgramData\\*) AND Image IN (explorer.exe, svchost.exe, notepad.exe, rundll32.exe) AND Signed = false" },
             { "label": "Reflective DLL marker", "detail": "Reflective DLLs load without touching disk — detectable via EDR memory scanning for PE headers in non-module-backed memory regions. Hunt processes with no corresponding ImageLoaded event for memory regions executing code." },
             { "label": "Sysmon EID 8 + EID 7 chain", "detail": "EID 8 CreateRemoteThread into target process within 2 seconds of EID 7 showing unsigned DLL loaded into that same target process = high-confidence injection chain." }
+          ],
+          "detection_logic": {
+            "sigma_title": "image_load_win_susp_dll_load_system_process",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/image_load/image_load_win_susp_dll_load_system_process.yml",
+            "query_hint": "EventCode=7 Image IN (svchost.exe,explorer.exe,notepad.exe) ImageLoaded path IN (%TEMP%,%APPDATA%,C:\\Users\\*\\Downloads) Signed=false"
+          },
+          "mitigations": [
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Enable WDAC or AppLocker to prevent unsigned DLLs from loading in system processes. HVCI enforces DLL code integrity at the kernel level." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Enable Sysmon EID 7 with filters for unsigned or temp-path DLLs in system processes. EDR behavioral rules detecting LoadLibrary calls to user-writable paths." }
           ],
           "tools": ["Cobalt Strike reflective DLL", "meterpreter", "Donut", "sRDI"],
           "actors": ["APT29", "FIN7", "Turla", "Lazarus Group"],
@@ -843,6 +942,15 @@
             { "label": "Impossible travel", "detail": "Same account (TargetUserName) with successful 4624 from two geographically distant IPs within a time window that makes travel physically impossible. Requires GeoIP enrichment on IpAddress field." },
             { "label": "New account first use", "detail": "TargetUserName last seen >30 days ago suddenly authenticating. Compare 4624 against account last-logon baseline in Active Directory. Reactivated dormant accounts are a strong persistence indicator." }
           ],
+          "detection_logic": {
+            "sigma_title": "win_security_susp_logon_type_etc",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_logon_type_etc.yml",
+            "query_hint": "EventCode=4624 LogonType IN (2,3,10) IpAddress NOT IN (known_ranges) TargetUserName NOT endswith $ | enrich with GeoIP for impossible travel"
+          },
+          "mitigations": [
+            { "id": "M1032", "name": "Multi-factor Authentication", "detail": "Enforce MFA for all privileged and remote access. Compromised credentials alone are insufficient when MFA is required — especially for VPN, RDP, and cloud console access." },
+            { "id": "M1036", "name": "Account Use Policies", "detail": "Implement sign-in risk policies with conditional access — block or challenge logons from IPs with no prior history for the account, especially outside business hours." }
+          ],
           "tools": ["Mimikatz (pass-the-hash)", "Rubeus", "CrackMapExec", "BloodHound", "Impacket"],
           "actors": ["APT29", "Volt Typhoon", "FIN7", "Scattered Spider", "Lazarus Group"],
           "refs": [
@@ -861,6 +969,15 @@
             { "label": "WinEvt 4624", "detail": "TargetUserName matches (svc_*, *_svc, *service*, *sa_*, *sql*, *iis*, *exchange*) AND LogonType IN (2, 10) — service accounts should only produce LogonType 5 (service). Any interactive logon is anomalous." },
             { "label": "4624 LogonType 3 from unexpected host", "detail": "Service account authenticating via network logon (Type 3) from a workstation rather than its designated server. TargetUserName = service account AND WorkstationName NOT IN (expected server list)." },
             { "label": "4648 Explicit credential use", "detail": "WinEvt 4648 (logon with explicit credentials) where SubjectUserName != TargetUserName and TargetUserName is a service account indicates credential stuffing or pass-the-password of a service credential." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_service_account_interactive_logon",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_service_account_interactive_logon.yml",
+            "query_hint": "EventCode=4624 LogonType IN (2,10) TargetUserName IN (*svc*,*sa_*,*sql*,*iis*,*exchange*) | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Implement Group Managed Service Accounts (gMSA) — passwords are 240-bit random and automatically rotated, making them unusable for interactive logons even if extracted." },
+            { "id": "M1036", "name": "Account Use Policies", "detail": "Apply User Rights Assignment GPO: Deny log on locally and Deny log on through Remote Desktop Services for all service accounts. Service accounts should only authenticate via LogonType 5 (service)." }
           ],
           "tools": ["CrackMapExec", "Impacket psexec/smbexec", "BloodHound", "Rubeus"],
           "actors": ["APT41", "FIN6", "Conti", "Black Basta", "Scattered Spider"],
@@ -885,6 +1002,15 @@
             { "label": "Sysmon EID 1 on source", "detail": "Image = mstsc.exe (RDP client) launched from cmd.exe, powershell.exe, or a non-desktop shortcut parent. mstsc.exe with command-line arguments (/v:target /admin) indicates automated lateral movement." },
             { "label": "EID 4778 / 4779", "detail": "WinEvt 4778 (session reconnect) or 4779 (session disconnect) from unusual IPs immediately before 4624 Type 10 indicates adversary cycling through RDP sessions across multiple hosts." }
           ],
+          "detection_logic": {
+            "sigma_title": "win_security_rdp_logon",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_rdp_logon.yml",
+            "query_hint": "EventCode=4624 LogonType=10 IpAddress IN (workstation_subnets) TargetUserName NOT IN (admin_rdp_users) | alert high"
+          },
+          "mitigations": [
+            { "id": "M1035", "name": "Limit Access to Resource Over Network", "detail": "Restrict RDP access to only designated jump hosts via host-based firewall rules. Block TCP 3389 between workstations at the network level." },
+            { "id": "M1032", "name": "Multi-factor Authentication", "detail": "Require MFA for all RDP sessions via NLA + MFA. Compromised credentials alone cannot initiate RDP when MFA is enforced at the gateway or host level." }
+          ],
           "tools": ["mstsc.exe (LOLBIN)", "xfreerdp", "SharpRDP", "Impacket rdp_check"],
           "actors": ["Conti", "LockBit", "BlackCat/ALPHV", "Akira", "Scattered Spider"],
           "refs": [
@@ -903,6 +1029,15 @@
             { "label": "Sysmon EID 13 registry", "detail": "TargetObject = HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\fDenyTSConnections AND Details = DWORD:0 — this key being set to 0 enables RDP. Alert immediately on any modification." },
             { "label": "WinEvt 4688 — netsh firewall", "detail": "CommandLine contains (netsh advfirewall firewall add rule) AND CommandLine contains (3389 OR RDP OR RemoteDesktop) — adversaries commonly open 3389 via netsh before enabling RDP via registry." },
             { "label": "First RDP logon baseline", "detail": "Host with no EID 4624 LogonType 10 events in the prior 30 days suddenly receiving a Type 10 logon. Baseline per-host RDP logon history and alert on first occurrence outside a change-management window." }
+          ],
+          "detection_logic": {
+            "sigma_title": "registry_set_enable_rdp",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_enable_rdp.yml",
+            "query_hint": "EventCode=13 TargetObject=*fDenyTSConnections Details=DWORD:0 | alert and investigate immediately"
+          },
+          "mitigations": [
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Enforce fDenyTSConnections=1 via GPO to keep RDP disabled by default. Prevent registry key modification via SACL auditing and EDR registry protection rules." },
+            { "id": "M1030", "name": "Network Segmentation", "detail": "Block TCP 3389 from non-management VLANs at the network perimeter. Even if RDP is enabled on a host, network segmentation prevents adversary connectivity." }
           ],
           "tools": ["reg.exe", "netsh.exe", "PowerShell Set-ItemProperty", "CrackMapExec"],
           "actors": ["Conti", "LockBit", "Akira", "Volt Typhoon"],
@@ -927,6 +1062,15 @@
             { "label": "WinEvt 4688 — WMI child process", "detail": "NewProcessName matches (cmd.exe, powershell.exe) AND ParentProcessName = C:\\Windows\\System32\\wbem\\WmiPrvSE.exe. WmiPrvSE spawning shells is almost never legitimate in production." },
             { "label": "Network WMI (DCOM)", "detail": "Sysmon EID 3: DestinationPort = 135 (DCOM endpoint mapper) followed within 10 seconds by EID 1 with WmiPrvSE.exe parent on the target host. Source host is a lateral movement pivot point." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_wmi_susp_child_process",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wmi_susp_child_process.yml",
+            "query_hint": "EventCode=1 ParentImage=*WmiPrvSE.exe Image IN (cmd.exe,powershell.exe,cscript.exe,wscript.exe,mshta.exe,rundll32.exe)"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Restrict which accounts can invoke WMI remotely via DCOM permissions. Limit WMI namespace access via WMI Access Control on root\\cimv2." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Block WmiPrvSE.exe from spawning interactive shells via WDAC child process rules. Enable WMI activity logging (Microsoft-Windows-WMI-Activity/Operational) for monitoring." }
+          ],
           "tools": ["wmic.exe", "Impacket wmiexec", "CrackMapExec --exec-method wmiexec", "PowerShell Invoke-WMIMethod"],
           "actors": ["APT41", "APT28", "Conti", "FIN6", "Lazarus Group"],
           "refs": [
@@ -945,6 +1089,15 @@
             { "label": "WinEvt 5861 — subscription creation", "detail": "EventID 5861 in Microsoft-Windows-WMI-Activity/Operational log indicates a new permanent WMI event subscription. Any new subscription outside a documented management baseline warrants investigation." },
             { "label": "Sysmon EID 19/20/21", "detail": "EID 19 = WmiEventFilter created, EID 20 = WmiEventConsumer created, EID 21 = WmiEventConsumerToFilter binding. All three within seconds of each other = complete persistence subscription installed. CommandLineEventConsumer CommandLineTemplate containing cmd.exe or powershell.exe = immediate escalation." },
             { "label": "MOF file drop", "detail": "Sysmon EID 11 showing .mof file creation in C:\\Windows\\System32\\wbem\\ by a non-SYSTEM process, followed by mofcomp.exe execution — adversaries compile malicious MOF files to register WMI subscriptions." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_wmi_persistence_event_subscription",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/wmi_event/win_wmi_persistence_event_subscription.yml",
+            "query_hint": "EventCode=5861 OR (EventCode=19 followby EventCode=20 followby EventCode=21 within 10s) | alert on new WMI subscription outside baseline"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Restrict DCOM and WMI access rights to administrator-only. Non-privileged users should not be able to create WMI event subscriptions." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Regularly audit WMI subscriptions with Get-WMIObject Win32_ActiveScriptEventConsumer. Alert on any new subscription via EID 5861 monitoring in SIEM." }
           ],
           "tools": ["PowerShell (New-WMIObject)", "wmic.exe subscription", "Impacket", "Empire WMI persistence"],
           "actors": ["APT29", "APT28", "Turla", "FIN7"],
@@ -969,6 +1122,15 @@
             { "label": "Task XML drop + import", "detail": "Sysmon EID 11: .xml file created in %TEMP% or user-writable path, followed within 10 seconds by schtasks.exe /create /xml pointing to that file. This pattern evades CommandLine detection of the action payload." },
             { "label": "Sysmon EID 1 — task-spawned child", "detail": "ParentImage = C:\\Windows\\System32\\svchost.exe (task host) AND ParentCommandLine contains taskeng.exe OR taskhostw.exe, and child Image = powershell.exe or cmd.exe with encoded or obfuscated arguments." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_schtasks_susp_pattern_execution",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_schtasks_susp_pattern_execution.yml",
+            "query_hint": "EventCode=1 Image=*schtasks.exe CommandLine=*/create* CommandLine=*(cmd.exe|powershell.exe|wscript.exe|%TEMP%|%APPDATA%)*"
+          },
+          "mitigations": [
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Enable EID 4698 (task created) and 4702 (task updated) auditing. Restrict task creation to administrators via GPO." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Apply WDAC rules preventing task actions from executing binaries in user-writable paths. Legitimate admin tasks should only reference executables in Program Files or Windows directories." }
+          ],
           "tools": ["schtasks.exe (LOLBIN)", "at.exe", "PowerShell Register-ScheduledTask", "CrackMapExec"],
           "actors": ["APT28", "APT41", "Conti", "LockBit", "FIN7", "Emotet"],
           "refs": [
@@ -987,6 +1149,15 @@
             { "label": "Sysmon EID 11 — task folder write", "detail": "TargetFilename starts with C:\\Windows\\System32\\Tasks\\ AND Image NOT IN (svchost.exe, taskeng.exe, taskhostw.exe) AND NOT (Image endswith MicrosoftEdgeUpdate.exe OR GoogleUpdate.exe) — direct task XML write by a non-system process is highly suspicious." },
             { "label": "WinEvt 4698 + 4702", "detail": "EID 4698 (task created) or 4702 (task modified) in Security log. TaskName matching an existing Windows task name with a modified action is a hijack indicator. Correlate SubjectUserName with expected admin accounts." },
             { "label": "Registry task modification", "detail": "Sysmon EID 13: TargetObject starts with HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Schedule\\TaskCache\\Tasks AND Details contains (cmd.exe OR powershell.exe OR %TEMP%) — some persistence frameworks write tasks directly to registry." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_scheduled_task_creation",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_scheduled_task_creation.yml",
+            "query_hint": "EventCode=4702 TaskName IN (known_legitimate_tasks) TaskContent=*(cmd.exe|powershell.exe|%TEMP%)* | alert on task action hijack"
+          },
+          "mitigations": [
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Restrict write permissions on C:\\Windows\\System32\\Tasks\\ to SYSTEM and Administrators. Prevent non-admin processes from modifying task XML files directly." },
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Enable EID 4702 auditing and baseline all task actions. Any modification to a known-good task's action binary is a high-confidence hijack indicator." }
           ],
           "tools": ["schtasks.exe", "PowerShell", "direct registry write", "CrackMapExec"],
           "actors": ["APT28", "APT29", "Turla", "Lazarus Group"],
@@ -1011,6 +1182,15 @@
             { "label": "Payload path in value", "detail": "Details (registry value data) contains (%TEMP%\\* OR %APPDATA%\\* OR C:\\Users\\*\\Downloads\\* OR C:\\ProgramData\\*) AND value data NOT signed. Persistence pointing to temp paths is a near-certain indicator of malware." },
             { "label": "Suspicious parent chain", "detail": "Image of process writing Run key has parent chain: Office app (winword.exe, excel.exe) → cmd.exe/wscript.exe → registry write. This chain = document macro dropping persistence payload." }
           ],
+          "detection_logic": {
+            "sigma_title": "registry_set_persistence_run_key",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_persistence_run_key.yml",
+            "query_hint": "EventCode=13 TargetObject=*(HKCU|HKLM)\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run* Details=*(%TEMP%|%APPDATA%|C:\\\\Users\\\\*\\\\Downloads)*"
+          },
+          "mitigations": [
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Apply AppLocker or WDAC to prevent execution from user-writable directories. Malware persisted via Run keys pointing to %TEMP% or %APPDATA% will fail if those paths are execution-blocked." },
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Restrict write access to HKLM Run keys to SYSTEM and Administrators only. Monitor HKCU Run key modifications by non-installer processes via Sysmon EID 13 rules." }
+          ],
           "tools": ["reg.exe", "PowerShell Set-ItemProperty", "malware droppers", "Emotet", "QBot"],
           "actors": ["Emotet", "QBot", "IcedID", "Lazarus Group", "APT28"],
           "refs": [
@@ -1029,6 +1209,15 @@
             { "label": "Sysmon EID 13 — Defender disable", "detail": "TargetObject matches (HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\DisableAntiSpyware OR HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Real-Time Protection\\DisableRealtimeMonitoring) AND Details = DWORD:1" },
             { "label": "Sysmon EID 13 — UAC bypass", "detail": "TargetObject = HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA AND Details = DWORD:0. Disabling UAC removes one of the most effective privilege barriers and should never occur outside imaging workflows." },
             { "label": "Sysmon EID 13 — audit policy", "detail": "TargetObject matches HKLM\\SYSTEM\\CurrentControlSet\\Control\\Mini\\Audit\\* — adversaries disable ETW or security audit logging here to blind SIEM collection before staging further actions." }
+          ],
+          "detection_logic": {
+            "sigma_title": "registry_set_disable_windows_defender",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_disable_windows_defender.yml",
+            "query_hint": "EventCode=13 TargetObject=*(Defender\\\\DisableAntiSpyware|Real-Time Protection\\\\DisableRealtimeMonitoring|EnableLUA)* Details IN (DWORD:1,DWORD:0)"
+          },
+          "mitigations": [
+            { "id": "M1054", "name": "Software Configuration", "detail": "Enforce Tamper Protection on Microsoft Defender via Intune or Microsoft Endpoint Manager — Tamper Protection prevents registry modifications to Defender settings even by local admins." },
+            { "id": "M1018", "name": "User Account Management", "detail": "Apply SACL auditing on security-relevant registry keys. Changes to Defender policy keys should generate EID 4657 events for immediate SIEM alerting." }
           ],
           "tools": ["reg.exe", "PowerShell Set-MpPreference", "Group Policy modification", "GMER"],
           "actors": ["LockBit", "Conti", "BlackCat/ALPHV", "Akira", "APT41"],
@@ -1053,6 +1242,15 @@
             { "label": "Sysmon EID 1 — sc/net stop", "detail": "Image IN (sc.exe, net.exe, net1.exe) AND CommandLine matches (stop.*WinDefend OR stop.*MsMpSvc OR stop.*SecurityHealthService OR stop.*WdNisSvc). Also: taskkill.exe /F /IM MsMpEng.exe" },
             { "label": "PS EID 4104 — ScriptBlock", "detail": "ScriptBlockText contains (Set-MpPreference OR Add-MpPreference) AND ScriptBlockText contains (-Disable OR ExclusionPath OR ExclusionProcess). Ransomware groups commonly exclude their staging directory before detonating the encryptor." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_powershell_disable_defender_av",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_disable_defender_av.yml",
+            "query_hint": "EventCode=1 Image=*powershell.exe CommandLine=*(Set-MpPreference*-Disable*)* | OR EventCode=1 Image IN (sc.exe,net.exe) CommandLine=*stop*WinDefend*"
+          },
+          "mitigations": [
+            { "id": "M1054", "name": "Software Configuration", "detail": "Enable Microsoft Defender Tamper Protection via Intune or Group Policy — prevents Set-MpPreference and sc.exe from modifying Defender settings even with local admin rights." },
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Apply SACL auditing on Defender registry keys and service configuration. Alert on any Defender service state transition to Stopped via EID 7036 monitoring in SIEM." }
+          ],
           "tools": ["Set-MpPreference (PowerShell)", "sc.exe", "net.exe", "GMER", "PowerTool"],
           "actors": ["LockBit", "Conti", "BlackCat/ALPHV", "Akira", "Hive", "Cuba"],
           "refs": [
@@ -1071,6 +1269,15 @@
             { "label": "Sysmon EID 6 — vulnerable driver load", "detail": "ImageLoaded path matches known BYOVD-abused drivers (gdrv.sys, RTCore64.sys, zamguard64.sys, iqvw64e.sys, mhyprot2.sys) OR Sysmon EID 7 with unsigned driver loaded from %TEMP% or user-writable path." },
             { "label": "Sysmon EID 1 — security process kill", "detail": "Image IN (taskkill.exe, tskill.exe) AND CommandLine contains (MsMpEng.exe OR SentinelAgent.exe OR CylanceSvc.exe OR cb.exe OR CSFalconService.exe OR bdagent.exe OR kavtsd.exe). Any attempt to kill a known AV/EDR process by name." },
             { "label": "WinEvt 7036 — service stopped", "detail": "ServiceName IN (WinDefend, SentinelAgent, CrowdStrike Falcon Sensor, CarbonBlack, Cylance) AND ServiceState = stopped. Security service stopping outside a planned maintenance window = immediate escalation." }
+          ],
+          "detection_logic": {
+            "sigma_title": "driver_load_win_vuln_driver_byovd",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/driver_load/driver_load_win_vuln_drivers.yml",
+            "query_hint": "EventCode=6 ImageLoaded IN (gdrv.sys,RTCore64.sys,zamguard64.sys,iqvw64e.sys,mhyprot2.sys) | alert critical | followby EventCode=7036 ServiceState=stopped"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Deploy Microsoft WDAC Vulnerable Driver Blocklist and enable HVCI — HVCI prevents vulnerable drivers from loading at the kernel level, blocking the BYOVD attack chain entirely." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Subscribe to Microsoft MSRC vulnerable driver block list updates. Maintain a WDAC policy with known BYOVD driver hashes and publisher-based blocks." }
           ],
           "tools": ["GMER", "Process Hacker", "Backstab", "AuKill", "BYOVD drivers (RTCore64, gdrv)"],
           "actors": ["LockBit 3.0", "BlackCat/ALPHV", "Scattered Spider", "Cuba", "AvosLocker"],
@@ -1095,6 +1302,15 @@
             { "label": "Sysmon EID 11 — payload drop", "detail": "Image endswith (winword.exe OR excel.exe OR powerpnt.exe) AND TargetFilename endswith (.exe OR .dll OR .bat OR .vbs OR .js OR .hta OR .ps1) AND TargetFilename contains (\\AppData\\Local\\Temp\\ OR \\Users\\Public\\) — file drop from Office process into staging path." },
             { "label": "WinEvt 4688 fallback", "detail": "NewProcessName endswith (powershell.exe OR cmd.exe) AND ParentProcessName endswith (winword.exe OR excel.exe OR powerpnt.exe). Supplement with CommandLine field when process auditing includes command-line logging." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_office_susp_child_processes",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_susp_child_processes.yml",
+            "query_hint": "EventCode=1 ParentImage IN (winword.exe,excel.exe,powerpnt.exe,outlook.exe,onenote.exe) Image IN (cmd.exe,powershell.exe,wscript.exe,mshta.exe,certutil.exe,rundll32.exe)"
+          },
+          "mitigations": [
+            { "id": "M1049", "name": "Antivirus/Antimalware", "detail": "Enable ASR rule: Block Office applications from creating child processes (GUID D4F940AB). This directly prevents macro-spawned shell execution." },
+            { "id": "M1021", "name": "Restrict Web-Based Content", "detail": "Disable Office macros via GPO for users not requiring them. Enable Protected View for files received via email. Block .xlsm, .docm, .xlam at the mail gateway." }
+          ],
           "tools": ["Macro-enabled .docm/.xlsm", "VBA dropper", "mshta.exe", "wscript.exe"],
           "actors": ["APT28", "APT32", "Lazarus Group", "TA551 (Shathak)", "Emotet"],
           "refs": [
@@ -1114,6 +1330,15 @@
             { "label": "Sysmon EID 11 — attachment extraction", "detail": "Image endswith onenote.exe AND TargetFilename endswith (.exe OR .bat OR .vbs OR .hta OR .js) AND TargetFilename contains (\\AppData\\Local\\Temp\\ OR \\AppData\\Roaming\\) — embedded attachment extraction before execution." },
             { "label": "Sysmon EID 3 — network follow-on", "detail": "Image endswith (wscript.exe OR cscript.exe OR powershell.exe) AND ParentImage endswith onenote.exe AND Initiated = true — scripting engine making outbound connection immediately after launch from OneNote parent confirms staged download." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_office_onenote_susp_child_processes",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_office_onenote_susp_child_processes.yml",
+            "query_hint": "EventCode=1 ParentImage=*onenote.exe Image IN (cmd.exe,powershell.exe,wscript.exe,cscript.exe,mshta.exe,hh.exe,regsvr32.exe)"
+          },
+          "mitigations": [
+            { "id": "M1049", "name": "Antivirus/Antimalware", "detail": "Enable ASR rule: Block Office communication applications from creating child processes. Apply to OneNote.exe via Defender ASR policy in audit-then-block mode." },
+            { "id": "M1021", "name": "Restrict Web-Based Content", "detail": "Block .one file attachments at the email gateway. Configure OneNote to show a security warning before opening embedded attachments." }
+          ],
           "tools": ["OneNote .one lure", "wscript.exe", "mshta.exe", "QakBot dropper"],
           "actors": ["TA577", "TA570", "Qakbot (QBot)", "IcedID"],
           "refs": [
@@ -1132,6 +1357,15 @@
             { "label": "Sysmon EID 1 — wmic proxy", "detail": "ParentImage endswith (winword.exe OR excel.exe OR powerpnt.exe) AND Image endswith wmic.exe AND CommandLine contains 'process call create'" },
             { "label": "Sysmon EID 1 — grandchild process", "detail": "ParentImage endswith wmic.exe AND Image endswith (powershell.exe OR cmd.exe OR mshta.exe OR regsvr32.exe OR rundll32.exe) — pivot from the proxied wmic parent to find the actual payload launcher." },
             { "label": "WinEvt 4104 correlation", "detail": "ScriptBlockText contains (New-Object Net.WebClient OR DownloadString OR IEX OR Invoke-Expression) WITHIN 30 seconds of a Sysmon EID 1 wmic.exe process spawned from an Office parent." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_wmic_susp_execution_via_office_process",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wmic_susp_execution_via_office_process.yml",
+            "query_hint": "EventCode=1 ParentImage IN (winword.exe,excel.exe,powerpnt.exe) Image=*wmic.exe CommandLine=*process call create*"
+          },
+          "mitigations": [
+            { "id": "M1049", "name": "Antivirus/Antimalware", "detail": "Enable ASR rule: Block Office applications from creating child processes — this catches both direct shell spawns and wmic.exe as an intermediary." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Block wmic.exe via AppLocker or WDAC on endpoints where it has no legitimate use. Process call create via wmic has no administrative use case that cannot be replaced by PowerShell." }
           ],
           "tools": ["wmic.exe (LOLBIN)", "VBA macro", "Cobalt Strike stager"],
           "actors": ["APT32", "FIN7", "TA551 (Shathak)"],
@@ -1156,6 +1390,15 @@
             { "label": "Sysmon EID 11 — webshell file creation", "detail": "Image endswith (w3wp.exe OR UMWorkerProcess.exe) AND TargetFilename endswith (.aspx OR .ashx OR .asmx OR .asp OR .php OR .jsp) AND TargetFilename contains (\\inetpub\\wwwroot\\ OR \\wwwroot\\ OR \\htdocs\\) — file written by IIS worker to web-accessible path." },
             { "label": "WinEvt 4688 — Exchange-specific", "detail": "ParentProcessName contains UMWorkerProcess.exe AND NewProcessName endswith (cmd.exe OR powershell.exe) — ProxyShell/ProxyLogon indicator. Correlate with IIS logs for preceding requests to /owa/, /ecp/, or /autodiscover/ paths." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_webshell_susp_process_spawned_from_webserver",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_webshell_susp_process_spawned_from_webserver.yml",
+            "query_hint": "EventCode=1 ParentImage IN (w3wp.exe,httpd.exe,nginx.exe,php-cgi.exe,tomcat.exe,UMWorkerProcess.exe) Image IN (cmd.exe,powershell.exe,whoami.exe,net.exe,ipconfig.exe)"
+          },
+          "mitigations": [
+            { "id": "M1051", "name": "Update Software", "detail": "Patch internet-facing applications immediately when CVEs are disclosed. Enable auto-patching for web servers and application frameworks (IIS, Apache, Tomcat, Exchange)." },
+            { "id": "M1030", "name": "Network Segmentation", "detail": "Place web servers in a DMZ isolated from internal networks. Web server processes should not reach internal DNS, LDAP, or file shares even if a web shell is deployed." }
+          ],
           "tools": ["China Chopper webshell", "AntSword", "Godzilla", "ReGeorg"],
           "actors": ["Volt Typhoon", "APT41", "Hafnium", "Ghost (Cring)"],
           "refs": [
@@ -1174,6 +1417,15 @@
             { "label": "Sysmon EID 1 — recon chain", "detail": "ParentImage endswith (w3wp.exe OR java.exe OR javaw.exe OR php-cgi.exe OR tomcat.exe) AND Image endswith (whoami.exe OR ipconfig.exe OR net.exe OR net1.exe OR nltest.exe OR systeminfo.exe OR hostname.exe OR quser.exe) — 3+ such events within 60 seconds is high-confidence exploitation." },
             { "label": "Sysmon EID 3 — unexpected outbound", "detail": "Image endswith (w3wp.exe OR java.exe) AND Initiated = true AND DestinationPort NOT IN (80, 443, 8080, 8443) AND DestinationIp NOT IN trusted_internal_ranges — unexpected outbound from web server process indicates web shell C2 or reverse shell." },
             { "label": "IIS log correlation", "detail": "Correlate Sysmon EID 1 spawn time with IIS access log entries showing HTTP 200 responses to .aspx or .php files in unusual paths within ±5 seconds. Pivot on cs-uri-stem for requests targeting files not in normal application manifests." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_webshell_hacking",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_webshell_hacking.yml",
+            "query_hint": "EventCode=1 ParentImage IN (w3wp.exe,java.exe,javaw.exe,php-cgi.exe) Image IN (whoami.exe,ipconfig.exe,net.exe,nltest.exe,systeminfo.exe) | count by host within 60s > 3"
+          },
+          "mitigations": [
+            { "id": "M1048", "name": "Application Isolation and Sandboxing", "detail": "Run web server worker processes with strict AppArmor/SELinux profiles preventing execution of system binaries. W3WP should not be able to execute cmd.exe or whoami.exe." },
+            { "id": "M1051", "name": "Update Software", "detail": "Maintain a vulnerability management program with SLA-based patching for internet-facing services. Apply virtual patching via WAF rules while permanent fixes are tested." }
           ],
           "tools": ["Ivanti SSRF exploits", "Apache Log4Shell", "F5 BIG-IP exploits", "FortiOS exploits"],
           "actors": ["APT41", "Pioneer Kitten", "Ghost (Cring)", "Volt Typhoon"],
@@ -1199,6 +1451,15 @@
             { "label": "Sysmon EID 1 — bcdedit recovery disable", "detail": "Image endswith bcdedit.exe AND CommandLine contains ('recoveryenabled No' OR 'bootstatuspolicy ignoreallfailures') — chain with shadow deletion within 5 minutes for high-confidence pre-encryption preparation." },
             { "label": "PS EID 4104 — PowerShell deletion", "detail": "ScriptBlockText contains ('Get-WmiObject' OR 'gwmi') AND ScriptBlockText contains ('Win32_ShadowCopy') AND ScriptBlockText contains ('.Delete()' OR 'Remove-WmiObject')" }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_susp_shadow_copies_deletion",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_susp_shadow_copies_deletion.yml",
+            "query_hint": "EventCode=1 Image IN (vssadmin.exe,wmic.exe) CommandLine=*(delete shadows|shadowcopy delete|Win32_ShadowCopy)* | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1053", "name": "Data Backup", "detail": "Maintain offline immutable backups (Azure Immutable Blob Storage, AWS WORM) that ransomware cannot delete even with domain admin rights." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Configure EDR rules alerting on vssadmin.exe or wmic.exe executing shadow copy deletion. Restrict who can run vssadmin delete shadows via GPO software restriction." }
+          ],
           "tools": ["vssadmin.exe", "wmic.exe", "bcdedit.exe", "PowerShell Get-WmiObject"],
           "actors": ["LockBit 3.0", "RansomHub", "Akira", "BlackCat/ALPHV", "Medusa", "Ghost (Cring)"],
           "refs": [
@@ -1218,6 +1479,15 @@
             { "label": "Sysmon EID 11 — mass rename heuristic", "detail": "Image NOT IN (explorer.exe, SearchIndexer.exe, MsMpEng.exe) AND TargetFilename endswith (.lockbit OR .akira OR .rhysida OR .medusa OR .locked OR .enc OR .ransom OR .crypt) — count EID 11 events per Image over 60-second rolling window; >100 events from a non-standard process is high-confidence." },
             { "label": "Sysmon EID 11 — ransom note drop", "detail": "TargetFilename endswith (HOW_TO_DECRYPT.txt OR !!!RESTORE_FILES!!!.txt OR README_FOR_DECRYPT.txt OR RECOVER_FILES.txt) AND Image NOT IN (explorer.exe, notepad.exe) — ransom note creation by a non-interactive process confirms active encryption event." },
             { "label": "Sysmon EID 3 — SMB lateral enumeration", "detail": "Image NOT IN (System, svchost.exe) AND DestinationPort = 445 AND count of unique DestinationIp > 10 within 120 seconds — lateral file enumeration across shares precedes network-share encryption in LockBit and RansomHub campaigns." }
+          ],
+          "detection_logic": {
+            "sigma_title": "file_event_win_ransomware_file_rename",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/file/file_event/",
+            "query_hint": "EventCode=11 TargetFilename IN (*.lockbit,*.akira,*.rhysida,*.medusa,*.crypt,*.locked,*.enc) | count by Image within 60s > 100"
+          },
+          "mitigations": [
+            { "id": "M1053", "name": "Data Backup", "detail": "Immutable offsite backups are the primary recovery control. Maintain 3-2-1 backup strategy with at least one offline/air-gapped copy. Test recovery time objectives regularly." },
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Deploy honeypot (canary) files in monitored directories — any process renaming a canary file triggers an immediate EDR isolation response before significant data loss occurs." }
           ],
           "tools": ["LockBit 3.0 encryptor", "RansomHub locker", "Akira encryptor", "Medusa locker"],
           "actors": ["LockBit 3.0", "RansomHub", "Akira", "Medusa", "BlackSuit"],
@@ -1242,6 +1512,15 @@
             { "label": "Sysmon EID 3 — non-browser HTTP", "detail": "Initiated = true AND DestinationPort IN (80, 443, 8080, 8443) AND Image NOT IN (chrome.exe, msedge.exe, firefox.exe, MicrosoftEdge.exe, Teams.exe, OneDrive.exe, svchost.exe) AND Image endswith (powershell.exe OR cmd.exe OR rundll32.exe OR regsvr32.exe OR mshta.exe) — LOLBin making HTTP/S connections is anomalous." },
             { "label": "Sysmon EID 22 — DNS beacon regularity", "detail": "QueryName resolves to the same external domain queried by a non-browser process at near-uniform intervals (e.g., every 60 ± 5 seconds) over 15+ minutes — beaconing regularity distinguishes C2 from legitimate software update checks." }
           ],
+          "detection_logic": {
+            "sigma_title": "proxy_ua_frameworks",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/web/proxy_generic/proxy_ua_frameworks.yml",
+            "query_hint": "proxy_log cs-user-agent IN (\"Go-http-client\",\"python-requests\",\"curl/\",\"MSIE 9.0\") src_process NOT IN (chrome.exe,msedge.exe,firefox.exe)"
+          },
+          "mitigations": [
+            { "id": "M1031", "name": "Network Intrusion Prevention", "detail": "Deploy a web proxy enforcing an allowlist of approved user agents. Block requests from non-browser user agents on endpoints unless the source process is an approved application." },
+            { "id": "M1037", "name": "Filter Network Traffic", "detail": "Enable TLS inspection on the perimeter proxy to inspect traffic from non-browser processes. Block connections to domains with no prior reputation or less than 30-day registration age." }
+          ],
           "tools": ["Cobalt Strike", "Metasploit Framework", "Sliver C2", "Havoc C2"],
           "actors": ["APT28", "APT29", "APT41", "Lazarus Group", "RansomHub"],
           "refs": [
@@ -1260,6 +1539,15 @@
             { "label": "Sysmon EID 3 — beacon interval analysis", "detail": "Initiated = true AND Image NOT IN (chrome.exe, msedge.exe, firefox.exe, svchost.exe, MsMpEng.exe) AND DestinationIp is external — group by (Image, DestinationIp), compute stddev of inter-connection intervals; stddev < 5 seconds over >= 10 samples in 30 minutes is strong beaconing signal." },
             { "label": "Firewall log pivot", "detail": "src_ip = endpoint AND dst_port IN (80, 443) AND bytes_out < 2000 AND bytes_in < 5000 per connection — small symmetric payloads at fixed byte sizes (matching Cobalt Strike default malleable profile sizes of 0-1024 bytes) are characteristic check-in traffic." },
             { "label": "Sysmon EID 22 — DNS beacon", "detail": "QueryName = same_external_fqdn AND Image NOT IN (chrome.exe, msedge.exe, firefox.exe, svchost.exe) — repeated DNS resolution of the same domain by a non-browser process at fixed intervals confirms DNS-assisted HTTP C2." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proxy_ua_apt",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/web/proxy_generic/proxy_ua_apt.yml",
+            "query_hint": "proxy_log | group by (src_ip,dst_ip) | compute stddev(interval) | where stddev < 5 AND count > 10 AND src_process NOT IN (chrome,msedge,firefox)"
+          },
+          "mitigations": [
+            { "id": "M1031", "name": "Network Intrusion Prevention", "detail": "Implement NDR with beaconing detection models that identify low-jitter periodic connections. Block outbound connections from non-browser processes to external IPs via host firewall." },
+            { "id": "M1037", "name": "Filter Network Traffic", "detail": "Block outbound connections from non-browser processes to external IPs via host-based firewall application rules. Only approved business applications should establish outbound HTTPS connections." }
           ],
           "tools": ["Cobalt Strike Beacon (HTTP/HTTPS profile)", "Havoc Framework", "Brute Ratel C4"],
           "actors": ["APT29 (Cozy Bear)", "APT41", "Scattered Spider", "BlackCat/ALPHV"],
@@ -1284,6 +1572,15 @@
             { "label": "Sysmon EID 11 — output file", "detail": "Image endswith certutil.exe AND TargetFilename endswith (.exe OR .dll OR .bat OR .ps1 OR .vbs OR .bin) in (\\AppData\\ OR \\Temp\\ OR \\Public\\ OR \\ProgramData\\) — file written by certutil to a staging path within seconds of the download command." },
             { "label": "Sysmon EID 3 — network connection", "detail": "Image endswith certutil.exe AND Initiated = true AND DestinationPort IN (80, 443) AND DestinationHostname NOT endswith (microsoft.com OR msocsp.com OR digicert.com OR globalsign.com) — certutil establishing outbound to non-PKI host confirms download abuse." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_certutil_download",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_certutil_download.yml",
+            "query_hint": "EventCode=1 Image=*certutil.exe CommandLine=*(-urlcache|-URL)* CommandLine=*http* CommandLine NOT (crl.microsoft.com|ocsp.msocsp.com|digicert.com)"
+          },
+          "mitigations": [
+            { "id": "M1042", "name": "Disable or Remove Feature or Program", "detail": "Block certutil.exe from making outbound HTTP connections via Windows Firewall application rules. certutil's legitimate PKI functions work with local certificate stores and known CA endpoints only." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Apply AppLocker or WDAC rules blocking certutil.exe execution from user contexts (non-SYSTEM, non-admin). Alert on any certutil execution outside SYSTEM/admin context." }
+          ],
           "tools": ["certutil.exe (LOLBIN)", "Cobalt Strike stager scripts"],
           "actors": ["APT41", "Lazarus Group", "Volt Typhoon", "FIN7", "Akira"],
           "refs": [
@@ -1302,6 +1599,15 @@
             { "label": "Sysmon EID 1 — bitsadmin download", "detail": "Image endswith bitsadmin.exe AND CommandLine contains ('/transfer' OR '/addfile' OR '/create' OR '/resume') AND CommandLine contains ('http://' OR 'https://') AND CommandLine NOT contains (windowsupdate.com OR microsoft.com OR update.microsoft.com)" },
             { "label": "Sysmon EID 1 — curl download", "detail": "Image endswith curl.exe AND CommandLine contains ('-o ' OR '--output ' OR '-O ') AND CommandLine contains ('http://' OR 'https://') AND TargetFilename NOT endswith (.html OR .json) — curl writing a binary or script to disk from an external URL." },
             { "label": "Sysmon EID 11 — file drop correlation", "detail": "TargetFilename written by (bitsadmin.exe OR curl.exe) in (\\Temp\\ OR \\AppData\\ OR \\Public\\ OR \\ProgramData\\) AND TargetFilename endswith (.exe OR .dll OR .bat OR .ps1 OR .vbs) — BITS jobs write files to disk under the SYSTEM context; pivot on the target path." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_bitsadmin_download_file_sharing_domains",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_bitsadmin_download_file_sharing_domains.yml",
+            "query_hint": "EventCode=1 Image IN (bitsadmin.exe,curl.exe) CommandLine=*(/transfer|--output|-o)* CommandLine=*http* | check TargetFilename for executable extensions"
+          },
+          "mitigations": [
+            { "id": "M1037", "name": "Filter Network Traffic", "detail": "Block outbound connections from bitsadmin.exe and curl.exe to non-Microsoft domains via host-based firewall. BITS transfers should only reach WSUS or Windows Update infrastructure." },
+            { "id": "M1042", "name": "Disable or Remove Feature or Program", "detail": "Disable the Background Intelligent Transfer Service on workstations where not needed. Remove bitsadmin.exe access via WDAC block if BITS is not required." }
           ],
           "tools": ["bitsadmin.exe (LOLBIN)", "curl.exe (native Windows 10+)", "Background Intelligent Transfer Service"],
           "actors": ["APT29", "Lazarus Group", "Black Basta", "FIN7", "RansomHub"],
@@ -1326,6 +1632,15 @@
             { "label": "Sysmon EID 1 — fodhelper spawn chain", "detail": "ParentImage endswith fodhelper.exe AND Image NOT IN (fodhelper.exe, conhost.exe) — any child process of fodhelper.exe other than itself is the bypassed elevated payload. Capture full CommandLine." },
             { "label": "WinEvt 4624 + integrity correlation", "detail": "Correlate Sysmon EID 1 (child of fodhelper.exe) with WinEvt 4624 TokenElevationType = 1 (full token) for the same process — confirms UAC bypass yielded a full high-integrity token." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_uac_bypass_fodhelper",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_uac_bypass_fodhelper.yml",
+            "query_hint": "EventCode=13 TargetObject=*HKCU\\\\Software\\\\Classes\\\\ms-settings\\\\shell\\\\open\\\\command* | followby EventCode=1 ParentImage=*fodhelper.exe within 30s"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Operate under least privilege — if users do not have local admin rights, UAC bypass is irrelevant. Use Privileged Access Workstations (PAWs) for admin tasks requiring elevation." },
+            { "id": "M1051", "name": "Update Software", "detail": "Set UAC to Always Notify (highest level) to require explicit consent for all elevation requests, reducing the auto-elevate attack surface exploited by fodhelper." }
+          ],
           "tools": ["UACME", "Metasploit bypassuac_fodhelper module", "PowerShell Empire bypassuac_fodhelper"],
           "actors": ["APT41", "Lazarus Group", "FIN7", "Black Basta"],
           "refs": [
@@ -1344,6 +1659,15 @@
             { "label": "Sysmon EID 13 — mscfile hijack", "detail": "TargetObject contains (HKCU\\Software\\Classes\\mscfile\\shell\\open\\command OR HKCU\\Software\\Classes\\Folder\\shell\\open\\command) AND Details NOT = (empty OR default mmc.exe path) — writes to these keys are exclusively associated with the eventvwr UAC bypass." },
             { "label": "Sysmon EID 1 — elevated child", "detail": "ParentImage endswith (eventvwr.exe OR computerdefaults.exe) AND Image NOT IN (mmc.exe, WerFault.exe, conhost.exe) — unexpected child process is the bypassed payload." },
             { "label": "Sysmon EID 1 — SilentCleanup variant", "detail": "Image endswith schtasks.exe AND CommandLine contains ('SilentCleanup' OR 'DiskCleanup') AND CommandLine contains ('/change' OR '/run') — UACME technique #58 writes to HKCU\\Environment\\windir and triggers via task scheduler." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_uac_bypass_eventvwr",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_uac_bypass_eventvwr.yml",
+            "query_hint": "EventCode=13 TargetObject=*HKCU\\\\Software\\\\Classes\\\\(mscfile|Folder)\\\\shell\\\\open\\\\command* | followby EventCode=1 ParentImage IN (eventvwr.exe,computerdefaults.exe)"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Eliminate local admin rights for standard users — UAC bypass techniques gain high integrity tokens only from medium-integrity processes. Without admin rights, no UAC bypass yields privilege." },
+            { "id": "M1054", "name": "Software Configuration", "detail": "Set UAC to Always Notify and disable auto-elevate COM objects via group policy to prevent eventvwr and computerdefaults UAC bypass chains." }
           ],
           "tools": ["UACME (techniques #33, #58)", "Metasploit bypassuac_eventvwr", "Cobalt Strike elevate-uac"],
           "actors": ["Lazarus Group", "RansomHub", "LockBit 3.0", "Conti"],
@@ -1368,6 +1692,15 @@
             { "label": "Sysmon EID 1 — never-expire flags", "detail": "Image endswith (net.exe OR net1.exe) AND CommandLine contains ('user' AND ('/expires:never' OR '/passwordchg:no' OR '/active:yes')) — persistent backdoor account creation pattern documented in Akira and Ghost ransomware campaigns." },
             { "label": "WinEvt 4720 — SAM account creation", "detail": "EventID = 4720 AND SubjectLogonId NOT IN known_admin_logon_ids AND TargetUserName NOT matches IT_naming_convention — pivot on SubjectLogonId to identify the creating session and correlate with logon type." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_net_user_add",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_net_user_add.yml",
+            "query_hint": "EventCode=4720 SubjectLogonId NOT IN (known_admin_sessions) | OR EventCode=1 Image=*(net|net1).exe CommandLine=*(user*/add)*"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Restrict the ability to create local accounts to Administrators only. Monitor EID 4720 in real time and correlate with change management records for every new local account." },
+            { "id": "M1028", "name": "Operating System Configuration", "detail": "Remove and disable the built-in local Administrator account. Apply naming convention enforcement and alert on any account creation outside the expected pattern." }
+          ],
           "tools": ["net.exe", "net1.exe", "PowerShell New-LocalUser"],
           "actors": ["Akira", "Ghost (Cring)", "BianLian", "Pioneer Kitten"],
           "refs": [
@@ -1386,6 +1719,15 @@
             { "label": "WinEvt 4732 — group membership change", "detail": "EventID = 4732 AND TargetSid IN (S-1-5-32-544, S-1-5-32-555) — 544 = Administrators, 555 = Remote Desktop Users. Correlate with WinEvt 4720 for the same MemberSid within prior 120 seconds to confirm create-then-elevate pattern." },
             { "label": "Sysmon EID 1 — net localgroup add", "detail": "Image endswith (net.exe OR net1.exe) AND CommandLine contains ('localgroup' AND ('administrators' OR 'Remote Desktop Users') AND '/add') — direct CLI method for elevating the backdoor account to admin." },
             { "label": "Sysmon EID 1 — RDP group priming", "detail": "Image endswith (net.exe OR net1.exe) AND CommandLine contains ('localgroup' AND 'Remote Desktop Users' AND '/add') — accounts primed for RDP lateral movement, as seen in BianLian and Akira campaigns." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_susp_add_user_local_admin_group",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_susp_add_user_local_admin_group.yml",
+            "query_hint": "EventCode=4732 TargetSid IN (S-1-5-32-544,S-1-5-32-555) | followby EventCode=4720 same MemberSid within 120s | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Apply User Rights policies preventing unauthorized accounts from being added to Administrators. Use LAPS to manage local admin passwords — backdoor accounts cannot access other hosts." },
+            { "id": "M1018", "name": "User Account Management", "detail": "Alert on EID 4732 (member added to Administrators group) in real time. Any new group membership change outside a change window for Administrators or RDP Users warrants immediate investigation." }
           ],
           "tools": ["net.exe", "net1.exe", "PowerShell Add-LocalGroupMember"],
           "actors": ["BianLian", "Akira", "Ghost (Cring)", "LockBit 3.0"],
@@ -1410,6 +1752,15 @@
             { "label": "Sysmon EID 1 — PSEXESVC.exe execution", "detail": "Image endswith PSEXESVC.exe AND IntegrityLevel = System — the service binary executes as SYSTEM. Correlate with WinEvt 4624 LogonType = 3 from the source IP within 30 seconds prior to confirm the lateral movement path." },
             { "label": "WinEvt 4624 + 4648 — lateral credential", "detail": "EventID = 4624 AND LogonType = 3 AND ProcessName = 'PSEXESVC.exe' OR EventID = 4648 AND TargetServerName = remote_host AND SubjectUserName = compromised_account — explicit credential logon events preceding PsExec on the remote host confirm admin-share lateral movement." }
           ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_sysinternals_psexec_execution",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sysinternals_psexec_execution.yml",
+            "query_hint": "EventCode=7045 ServiceName=PSEXESVC | OR EventCode=7045 ImagePath=*(\\\\\\\\*ADMIN$|\\\\Temp\\\\|\\\\ProgramData\\\\)*"
+          },
+          "mitigations": [
+            { "id": "M1035", "name": "Limit Access to Resource Over Network", "detail": "Restrict ADMIN$ and IPC$ share access to designated management servers via host-based firewall rules. Block SMB (445) from workstations to workstations at the network level." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Require dedicated admin accounts used only from PAWs for remote execution. LAPS prevents credential reuse that enables PsExec lateral movement across the environment." }
+          ],
           "tools": ["PsExec (SysInternals)", "Impacket psexec.py", "PAExec", "SharpExec"],
           "actors": ["LockBit 3.0", "Black Basta", "Conti", "Scattered Spider", "FIN6"],
           "refs": [
@@ -1428,6 +1779,15 @@
             { "label": "Sysmon EID 1 — sc create staging binpath", "detail": "Image endswith sc.exe AND CommandLine contains ('create' OR 'config') AND CommandLine contains ('binpath=' OR 'binPath=') AND CommandLine contains (\\AppData\\ OR \\Temp\\ OR \\ProgramData\\ OR \\Users\\Public\\ OR '\\\\')" },
             { "label": "Sysmon EID 13 — registry service key creation", "detail": "TargetObject contains (HKLM\\SYSTEM\\CurrentControlSet\\Services\\) AND Details contains (\\AppData\\ OR \\Temp\\ OR \\ProgramData\\ OR \\Users\\Public\\) AND Image NOT IN (services.exe, svchost.exe, msiexec.exe) — direct registry write to Services hive from a non-system process." },
             { "label": "WinEvt 7045 + 7036 sequence", "detail": "EventID = 7045 AND ImagePath contains (\\Temp\\ OR \\AppData\\ OR \\ProgramData\\) — new service with non-standard path. Chain with EventID = 7036 for same ServiceName entering Running state within 60 seconds to confirm activation." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_sc_create_service",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sc_create_service.yml",
+            "query_hint": "EventCode=1 Image=*sc.exe CommandLine=*(create|config)* CommandLine=*binpath* CommandLine=*(%TEMP%|%APPDATA%|\\\\ProgramData|\\\\Users\\\\Public)*"
+          },
+          "mitigations": [
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Service creation requires administrator rights. Enforce least privilege — limit which accounts can create Windows services. Monitor EID 7045 in real time and correlate with change management records." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Apply WDAC code integrity policies preventing service binaries from loading from user-writable paths. Legitimate services always reside in %ProgramFiles% or %SystemRoot%." }
           ],
           "tools": ["sc.exe", "PowerShell New-Service", "reg.exe service key manipulation"],
           "actors": ["Volt Typhoon", "APT41", "Akira", "Ghost (Cring)", "Black Basta"],
