@@ -1,10 +1,6 @@
 import { getIndex, getData } from './data-loader.js';
 import { lookupByTag, suggestTags } from './hyp-db.js';
 
-// Returns: { type, query, actor?, items }
-// type: 'technique' | 'group' | 'malware' | 'tool' | 'campaign' | 'not-found'
-// items: array of technique objects
-
 export function detectQueryType(q) {
   const t = q.trim();
   if (/^T\d{4}(\.\d{3})?$/i.test(t))  return 'technique-id';
@@ -41,7 +37,6 @@ export function lookup(query) {
     return buildActorResult(actor, index, query);
   }
 
-  // Name search — score and rank
   const scored = [];
   const seen   = new Set();
 
@@ -67,12 +62,10 @@ export function lookup(query) {
 
   const best = scored[0].e;
 
-  // If best is an actor, return actor result
   if (best.type !== 'technique') {
     return buildActorResult(best.obj, index, q);
   }
 
-  // All techniques - return them
   const techs = scored
     .filter(s => s.e.type === 'technique')
     .slice(0, 50)
@@ -103,7 +96,6 @@ export function lookupAll() {
   return { type: 'all', items: parents, query: '' };
 }
 
-// Returns up to `limit` suggestions for autocomplete
 export function suggest(query, limit = 12) {
   const index = getIndex();
   if (!index || query.length < 2) return [];
@@ -112,7 +104,6 @@ export function suggest(query, limit = 12) {
   const seen = new Set();
   const out  = [];
 
-  // Exact ID prefix first (T1003, G00, S00, C00)
   for (const e of index.entries) {
     if (!e.id.toLowerCase().startsWith(ql)) continue;
     const key = `${e.type}:${e.id}`;
@@ -122,7 +113,6 @@ export function suggest(query, limit = 12) {
     if (out.length >= limit) return out;
   }
 
-  // Name prefix
   for (const e of index.entries) {
     if (!e.key.startsWith(ql)) continue;
     const key = `${e.type}:${e.id}`;
@@ -132,7 +122,6 @@ export function suggest(query, limit = 12) {
     if (out.length >= limit) return out;
   }
 
-  // Name contains
   for (const e of index.entries) {
     if (!e.key.includes(ql) || e.key.startsWith(ql)) continue;
     const key = `${e.type}:${e.id}`;
@@ -142,7 +131,6 @@ export function suggest(query, limit = 12) {
     if (out.length >= limit) return out;
   }
 
-  // Tag suggestions (curated tools / actors)
   const tags = suggestTags(query, limit - out.length);
   for (const t of tags) {
     const key = `${t.type}:${t.id}`;

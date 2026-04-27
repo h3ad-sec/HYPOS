@@ -17,7 +17,6 @@ export const TACTIC_META = {
 
 const FALLBACK_TACTIC = { label: 'Unknown', color: '#7d8fb3', goal: 'achieve their objective' };
 
-// Tactic-specific adversary assumption; {platforms} substituted at build time
 const TACTIC_PREMISE = {
   'reconnaissance':       'A threat actor is suspected of conducting pre-intrusion reconnaissance',
   'resource-development': 'A threat actor is suspected of building adversary infrastructure ahead of intrusion',
@@ -35,7 +34,6 @@ const TACTIC_PREMISE = {
   'impact':               'A threat actor with sufficient access on {platforms} is suspected of executing destructive or disruptive operations',
 };
 
-// Maps ATT&CK data component names to concise hunt-pivot language
 const COMPONENT_HUNT_HINTS = {
   'OS API Execution':                     'anomalous calls to credential, injection, or memory-manipulation APIs',
   'Process Access':                       'cross-process memory reads outside known software',
@@ -145,7 +143,6 @@ function buildDetection(t) {
   return `Review process, file, and network telemetry on ${(t.platforms || []).join(', ') || 'target systems'} for indicators consistent with ${t.name}.`;
 }
 
-// Groups technique hypotheses by tactic, preserving canonical ATT&CK order
 export function groupByTactic(hypotheses) {
   const TACTIC_ORDER = [
     'reconnaissance', 'resource-development', 'initial-access', 'execution',

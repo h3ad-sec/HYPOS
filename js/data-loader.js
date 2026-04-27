@@ -1,7 +1,3 @@
-// Fetches and processes the MITRE ATT&CK STIX bundle.
-// Tries data/attack.json first (pre-built), falls back to live GitHub fetch.
-// Caches processed result in localStorage for 7 days.
-
 const STIX_URL  = 'https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json';
 const LOCAL_URL = './data/attack.json';
 const CACHE_KEY = 'hypos_v4';
@@ -13,7 +9,6 @@ let _index = null;
 export async function loadData(onProgress) {
   if (_data) return _data;
 
-  // Cache hit
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
@@ -27,8 +22,6 @@ export async function loadData(onProgress) {
     }
   } catch (_) {}
 
-  // Try pre-built static file first
-  let bundle = null;
   try {
     onProgress?.('loading', 'Loading ATT&CK dataset…');
     const r = await fetch(LOCAL_URL);
@@ -44,7 +37,6 @@ export async function loadData(onProgress) {
     }
   } catch (_) {}
 
-  // Live STIX fetch
   onProgress?.('loading', 'Connecting to MITRE ATT&CK…');
   const r = await fetch(STIX_URL);
   if (!r.ok) throw new Error(`STIX fetch failed: ${r.status}`);
@@ -53,22 +45,19 @@ export async function loadData(onProgress) {
   const text = await r.text();
 
   onProgress?.('loading', 'Processing techniques…');
-  bundle = JSON.parse(text);
+  const bundle = JSON.parse(text);
 
   onProgress?.('loading', 'Building index…');
   _data  = processBundle(bundle);
   _index = buildIndex(_data);
   cacheData(_data);
 
-  const m = _data;
-  onProgress?.('ready', `${m.techniques.length} techniques · ${m.groups.length} groups · ${m.malware.length} malware · ${m.tools.length} tools`);
+  onProgress?.('ready', `${_data.techniques.length} techniques · ${_data.groups.length} groups · ${_data.malware.length} malware · ${_data.tools.length} tools`);
   return _data;
 }
 
 export function getData()  { return _data;  }
 export function getIndex() { return _index; }
-
-// ── Processing ────────────────────────────────────────────────
 
 function getMitreId(obj) {
   const r = (obj.external_references || []).find(x => x.source_name === 'mitre-attack');
@@ -101,9 +90,8 @@ function firstSentence(t) {
 }
 
 function processBundle(bundle) {
-  // ── Pass 1: build data-source / data-component lookup tables ──────────────
   const dsNameByStix  = {};
-  const compInfoByStix = {}; // stix-id → { str, source, component }
+  const compInfoByStix = {};
 
   for (const obj of bundle.objects) {
     if (obj.type === 'x-mitre-data-source') dsNameByStix[obj.id] = obj.name;
@@ -118,9 +106,8 @@ function processBundle(bundle) {
     };
   }
 
-  // attack-pattern stix-id → ds strings + analytics map
-  const techDsMap       = {}; // stix-id → ["Source: Component", ...]
-  const techAnalyticMap = {}; // stix-id → { "Source: Component": "analytic text" }
+  const techDsMap       = {};
+  const techAnalyticMap = {};
 
   for (const obj of bundle.objects) {
     if (obj.type !== 'relationship' || obj.relationship_type !== 'detects') continue;
@@ -134,7 +121,6 @@ function processBundle(bundle) {
     if (analytic) techAnalyticMap[tid][info.str] = analytic;
   }
 
-  // ── Pass 2: index techniques and actors ───────────────────────────────────
   const techByStix  = {};
   const actorByStix = {};
   const techniques  = [];
@@ -149,7 +135,6 @@ function processBundle(bundle) {
     if (!id) continue;
 
     if (obj.type === 'attack-pattern') {
-      // Prefer convenience field if populated, else use detects-relationship sources
       const ds = (obj.x_mitre_data_sources && obj.x_mitre_data_sources.length)
         ? obj.x_mitre_data_sources.slice(0, 12)
         : (techDsMap[obj.id] || []).slice(0, 12);
@@ -198,7 +183,6 @@ function processBundle(bundle) {
     }
   }
 
-  // ── Pass 3: relationships ─────────────────────────────────────────────────
   for (const obj of bundle.objects) {
     if (obj.type !== 'relationship') continue;
 
@@ -227,8 +211,6 @@ function processBundle(bundle) {
     campaigns:  clean(campaigns),
   };
 }
-
-// ── Index ──────────────────────────────────────────────────────
 
 function buildIndex(data) {
   const techById = {};

@@ -112,8 +112,6 @@ export function showError(msg) {
     </div>`;
 }
 
-// ── Results rendering ──────────────────────────────────────────
-
 export function renderResults(result) {
   if (!result || result.type === 'not-found') {
     $('hyp-state').innerHTML = `
@@ -468,8 +466,6 @@ function buildFooter(h) {
   </div>`;
 }
 
-// ── Autocomplete ───────────────────────────────────────────────
-
 let _acSelected = -1;
 
 export function renderSuggestions(suggestions) {
@@ -525,8 +521,6 @@ export function updateDetectBadge(query) {
   el.textContent = labels[type] || '';
   el.classList.add('active');
 }
-
-// ── Helpers ────────────────────────────────────────────────────
 
 function buildDsComponentChips(dataSources, analytics) {
   if (!dataSources || !dataSources.length) return '';

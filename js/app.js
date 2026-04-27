@@ -1,4 +1,4 @@
-import { loadData, getData, getIndex, clearCache } from './data-loader.js';
+import { loadData, getData } from './data-loader.js';
 import { loadHypDB } from './hyp-db.js';
 import { lookup, lookupAll, suggest, detectQueryType } from './lookup.js';
 import {
@@ -7,15 +7,12 @@ import {
   moveAcSelection, updateDetectBadge,
 } from './ui.js';
 
-// Expose for inline onclick handlers in rendered cards
 window.__hyposLookup = { detectQueryType };
 window.__hypSearch   = (q) => { runSearch(q); };
 
 let _dataReady    = false;
 let _pendingQuery = null;
 let _lastResult   = null;
-
-// ── Filters ────────────────────────────────────────────────────
 
 const _activePlatforms = new Set();
 const _activeSources   = new Set();
@@ -94,15 +91,17 @@ function initFilters(data) {
 
   const srcEl = document.getElementById('src-chips');
   if (srcEl) {
-    srcEl.innerHTML = sources.map(s =>
-      `<span class="hyp-fchip" data-src="${s}" onclick="window.__toggleSource('${s}')">${s}</span>`
-    ).join('');
+    if (sources.length) {
+      srcEl.innerHTML = sources.map(s =>
+        `<span class="hyp-fchip" data-src="${s}" onclick="window.__toggleSource('${s}')">${s}</span>`
+      ).join('');
+    } else {
+      srcEl.closest('.hyp-filter-row')?.remove();
+    }
   }
 
   document.getElementById('hyp-filter-bar')?.classList.add('ready');
 }
-
-// ── Init ────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
@@ -152,8 +151,6 @@ async function loadATTACK() {
     showError(`${msg}. Check your internet connection or try refreshing.`);
   }
 }
-
-// ── Search ─────────────────────────────────────────────────────
 
 function initSearch() {
   const form  = document.getElementById('hyp-form');
@@ -213,7 +210,6 @@ function initSearch() {
     form.dispatchEvent(new Event('submit'));
   });
 
-  // URL query param support: ?q=T1003
   const params = new URLSearchParams(window.location.search);
   const qParam = params.get('q');
   if (qParam) {
@@ -226,7 +222,6 @@ function initSearch() {
 function runSearch(query) {
   const q = query.trim();
   if (!q) return;
-  // Update URL without navigation
   const url = new URL(window.location);
   url.searchParams.set('q', q);
   window.history.replaceState(null, '', url);
@@ -236,8 +231,6 @@ function runSearch(query) {
   renderResults(applyFilters(result));
   window.scrollTo({ top: document.getElementById('hyp-state')?.offsetTop - 160, behavior: 'smooth' });
 }
-
-// ── Theme ──────────────────────────────────────────────────────
 
 function initTheme() {
   const saved = localStorage.getItem('theme') || 'dark';
@@ -265,8 +258,6 @@ window.toggleTheme = function () {
   applyTheme(next);
 };
 
-// ── Nav drawer ─────────────────────────────────────────────────
-
 function initNav() {
   window.toggleDrawer = () => {
     document.getElementById('navDrawer')?.classList.toggle('open');
@@ -275,8 +266,6 @@ function initNav() {
     document.getElementById('navDrawer')?.classList.remove('open');
   };
 }
-
-// ── Matrix ─────────────────────────────────────────────────────
 
 function initMatrix() {
   const canvas = document.getElementById('matrix');
