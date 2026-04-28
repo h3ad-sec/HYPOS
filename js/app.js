@@ -203,6 +203,12 @@ function syncFilterUI() {
     const check = el.querySelector('.hyp-fdropdown-check');
     if (check) check.textContent = active ? '✓' : '';
   });
+  document.querySelectorAll('.hyp-fdropdown-item[data-src]').forEach(el => {
+    const active = _activeSources.has(el.dataset.src);
+    el.classList.toggle('active', active);
+    const check = el.querySelector('.hyp-fdropdown-check');
+    if (check) check.textContent = active ? '✓' : '';
+  });
   const anyActive = _activePlatforms.size > 0 || _activeSources.size > 0 || _activeActors.size > 0;
   document.getElementById('hyp-filter-clear')?.classList.toggle('visible', anyActive);
 }
@@ -236,6 +242,81 @@ window.__clearFilters = () => {
   syncFilterUI();
   rerender();
 };
+
+function attachSourceDropdown(chipsEl, allSources) {
+  const row = chipsEl.closest('.hyp-filter-row');
+  if (!row) return;
+
+  const wrap    = document.createElement('div');
+  wrap.className = 'hyp-fdropdown-wrap';
+
+  const trigger = document.createElement('span');
+  trigger.className   = 'hyp-fdropdown-trigger';
+  trigger.textContent = `▾ ALL (${allSources.length})`;
+
+  const panel   = document.createElement('div');
+  panel.className = 'hyp-fdropdown';
+
+  const searchEl = document.createElement('input');
+  searchEl.type        = 'text';
+  searchEl.className   = 'hyp-fdropdown-search';
+  searchEl.placeholder = 'Search sources…';
+
+  const listEl = document.createElement('div');
+  listEl.className = 'hyp-fdropdown-list';
+
+  function renderItems(items) {
+    listEl.innerHTML = '';
+    for (const s of items) {
+      const item  = document.createElement('div');
+      item.className  = `hyp-fdropdown-item${_activeSources.has(s.name) ? ' active' : ''}`;
+      item.dataset.src = s.name;
+
+      const check = document.createElement('span');
+      check.className   = 'hyp-fdropdown-check';
+      check.textContent = _activeSources.has(s.name) ? '✓' : '';
+
+      const name = document.createElement('span');
+      name.textContent = s.name;
+
+      const cnt = document.createElement('span');
+      cnt.className   = 'hyp-fdropdown-count';
+      cnt.textContent = s.count;
+
+      item.append(check, name, cnt);
+      item.addEventListener('click', () => {
+        window.__toggleSource(s.name);
+        const active = _activeSources.has(s.name);
+        item.classList.toggle('active', active);
+        check.textContent = active ? '✓' : '';
+      });
+      listEl.appendChild(item);
+    }
+  }
+
+  searchEl.addEventListener('input', () => {
+    const q = searchEl.value.toLowerCase();
+    renderItems(q ? allSources.filter(s => s.name.toLowerCase().includes(q)) : allSources);
+  });
+
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = panel.classList.toggle('open');
+    trigger.classList.toggle('open', isOpen);
+    if (isOpen) { renderItems(allSources); searchEl.value = ''; setTimeout(() => searchEl.focus(), 0); }
+  });
+
+  document.addEventListener('click', e => {
+    if (!wrap.contains(e.target)) {
+      panel.classList.remove('open');
+      trigger.classList.remove('open');
+    }
+  });
+
+  panel.append(searchEl, listEl);
+  wrap.append(trigger, panel);
+  row.appendChild(wrap);
+}
 
 function attachDropdown(chipsEl, allItems) {
   const row = chipsEl.closest('.hyp-filter-row');
@@ -335,17 +416,17 @@ function initFilters(data) {
       srcCount[src] = (srcCount[src] || 0) + 1;
     }
   }
-  const sources = Object.entries(srcCount)
+  const allSources = Object.entries(srcCount)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 14)
-    .map(([s]) => s);
+    .map(([name, count]) => ({ name, count }));
 
   const srcEl = document.getElementById('src-chips');
   if (srcEl) {
-    if (sources.length) {
-      srcEl.innerHTML = sources.map(s =>
-        `<span class="hyp-fchip" data-src="${s}" onclick="window.__toggleSource('${s}')">${s}</span>`
+    if (allSources.length) {
+      srcEl.innerHTML = allSources.slice(0, 14).map(s =>
+        `<span class="hyp-fchip" data-src="${s.name}" onclick="window.__toggleSource('${s.name}')">${s.name}</span>`
       ).join('');
+      attachSourceDropdown(srcEl, allSources);
     } else {
       srcEl.closest('.hyp-filter-row')?.remove();
     }
