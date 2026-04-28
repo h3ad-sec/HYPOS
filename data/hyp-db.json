@@ -1799,6 +1799,450 @@
           "fpr": "Software installers (msiexec.exe) and enterprise deployment tools (SCCM ccmexec.exe, PDQ Deploy) create services with binpaths in ProgramData or custom application directories. Allowlist by parent process (msiexec.exe, ccmsetup.exe), publisher signature on the binpath binary, and known application install paths. Alert when binpath is unsigned, in a user-writable path, or when sc.exe is invoked interactively."
         }
       ]
+    },
+    "T1059.003": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1059.003-001",
+          "title": "cmd.exe Spawned from Office, Browser, or Script Engine",
+          "severity": "high",
+          "statement": "A threat actor is suspected of achieving initial execution by spawning cmd.exe from a document-handler or browser process, indicating macro execution, a malicious Office document, or a browser-based exploit. Hunt for cmd.exe child processes of WINWORD.exe, EXCEL.exe, POWERPNT.exe, iexplore.exe, chrome.exe, msedge.exe, java.exe, or msiexec.exe outside of known software deployment scenarios.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — suspicious parent", "detail": "Image endswith cmd.exe AND ParentImage IN (WINWORD.exe, EXCEL.exe, POWERPNT.exe, MSPUB.exe, ONENOTE.exe, iexplore.exe, chrome.exe, msedge.exe, firefox.exe, java.exe, javaw.exe, msiexec.exe, wscript.exe, cscript.exe). Execution from Office is near-certain malicious in modern environments." },
+            { "label": "CommandLine content", "detail": "CommandLine contains (/c OR /k) AND contains (powershell, certutil, bitsadmin, curl, wget, net, whoami, ipconfig, nltest) — these indicate initial reconnaissance or stager download immediately after parent spawns cmd." },
+            { "label": "Child process chaining", "detail": "cmd.exe spawning PowerShell.exe which spawns net.exe or ping.exe within 30 seconds of the chain start — the full discovery burst pattern characteristic of macro-based initial access and post-exploitation automation." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_cmd_susp_parent_process",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_cmd_susp_parent_process.yml",
+            "query_hint": "EventCode=1 Image=*cmd.exe ParentImage IN (*WINWORD*,*EXCEL*,*POWERPNT*,*iexplore*,*chrome*,*msedge*)"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Configure EDR to block or alert cmd.exe spawned by Office or browser processes. Attack Surface Reduction rule AS_OFFICE_CHILD_PROCESS blocks Office apps from creating child processes." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Deploy ASR rule: Block Office applications from creating child processes (GUID d4f940ab-401b-4efc-aadc-ad5f3c50688a). Apply to all Office apps in block mode." }
+          ],
+          "tools": ["cmd.exe", "PowerShell", "mshta.exe", "wscript.exe", "cscript.exe"],
+          "actors": ["APT28", "APT29", "TA505", "FIN7", "Lazarus Group"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_cmd_susp_parent_process", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_cmd_susp_parent_process.yml" },
+            { "label": "Microsoft ASR Rules Reference", "type": "report", "url": "https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference" },
+            { "label": "Red Canary TDR — cmd.exe abuse", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
+          ],
+          "fpr": "Software installers launched interactively may spawn cmd.exe via msiexec.exe. Allowlist installer parent chains where msiexec.exe has a signed publisher and the resulting cmd.exe CommandLine matches a known deployment script pattern. Office → cmd.exe has near-zero legitimate use in modern macro-disabled environments."
+        },
+        {
+          "id": "HYP-T1059.003-002",
+          "title": "Obfuscated cmd.exe Command Line with Environment Variable Substitution",
+          "severity": "medium",
+          "statement": "A threat actor on Windows is suspected of using cmd.exe's delayed expansion (/v:on), caret (^) insertion, or environment variable substitution to obfuscate a malicious command from signature-based detection. Hunt for cmd.exe invocations with /v:on, /r flags, or CommandLines containing an abnormal density of ^ characters or %comspec% self-references, particularly when the decoded payload involves network tools or script engines.",
+          "pivots": [
+            { "label": "Caret and delayed-expansion obfuscation", "detail": "CommandLine matches: cmd.exe /v:on /c or cmd.exe /v /c followed by a string with 3+ consecutive ^ characters, or %variable:~N,M% substring extraction syntax. More than 5 ^ per 100 characters is a reliable obfuscation signal." },
+            { "label": "COMSPEC self-reference", "detail": "CommandLine contains %comspec% OR %COMSPEC% outside of %COMSPEC% /c startX patterns — adversaries reference %comspec% to hide cmd.exe invocations from simple string matching." },
+            { "label": "Long CommandLine with no readable words", "detail": "CommandLine length > 300 characters with entropy > 4.5 bits/character and no recognisable English words — characteristic of heavily obfuscated cmd stagers. Pair with: ParentImage in script engines or task schedulers." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_cmd_obfuscation",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_cmd_obfuscation.yml",
+            "query_hint": "EventCode=1 Image=*cmd.exe (CommandLine=*/v:on* OR CommandLine=*^*^*^*) CommandLine length > 200"
+          },
+          "mitigations": [
+            { "id": "M1049", "name": "Antivirus/Antimalware", "detail": "Enable AMSI-integrated scanning of cmd.exe arguments. Some EDRs de-obfuscate cmd.exe caret sequences before matching, covering this pattern. Script block logging equivalent is not native to cmd but AMSI covers PowerShell follow-on." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Restrict cmd.exe execution to approved user accounts via AppLocker or Software Restriction Policies where feasible — most end-user scenarios do not require cmd.exe access." }
+          ],
+          "tools": ["cmd.exe", "Donut", "Invoke-Obfuscation (cmd.exe output)"],
+          "actors": ["FIN8", "TA505", "Cobalt Group", "MuddyWater"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_cmd_obfuscation", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_cmd_obfuscation.yml" },
+            { "label": "FireEye: Obfuscation in the Wild", "type": "report", "url": "https://www.mandiant.com/resources" },
+            { "label": "Daniel Bohannon — Invoke-Obfuscation", "type": "report", "url": "https://github.com/danielbohannon/Invoke-Obfuscation" }
+          ],
+          "fpr": "Legitimate build scripts and legacy deployment scripts may use ^ line continuation and delayed expansion. Tune on: CommandLine length threshold, caret density, and parent process (alert on non-build parents). Exclude parent processes that are signed build tools (msbuild.exe, devenv.exe) with matching build directory paths."
+        },
+        {
+          "id": "HYP-T1059.003-003",
+          "title": "cmd.exe Executing Double-Extension or Renamed Payload from User Directory",
+          "severity": "high",
+          "statement": "A threat actor is suspected of delivering a .cmd or .bat file disguised with a double extension (e.g., invoice.pdf.cmd) or renamed with a benign name and executing it via cmd.exe from a user-writable directory such as Downloads, Desktop, or Temp. Hunt for cmd.exe or conhost.exe executing script files with double extensions, or .bat/.cmd files in %USERPROFILE% directories that were created within the last 24 hours.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — double extension", "detail": "Image endswith cmd.exe AND CommandLine matches (*pdf.cmd OR *docx.cmd OR *xlsx.bat OR *jpg.cmd OR *zip.cmd) — file extension spoofing that exploits default hidden extension setting in Windows Explorer." },
+            { "label": "Newly-created script file execution", "detail": "Sysmon EID 11 (file created) followed within 300s by EID 1 where CommandLine references the same filename. Created path: %USERPROFILE%\\Downloads\\, %USERPROFILE%\\Desktop\\, %TEMP%\\. Filter to .cmd, .bat, .vbs, .js files with recent creation timestamp." },
+            { "label": "cmd.exe /c with full path to user directory", "detail": "CommandLine contains /c AND (C:\\Users\\ OR %USERPROFILE%) AND file extension IN (.cmd, .bat) AND parent NOT IN explorer.exe, cmd.exe — indicates a script fired by a macro or download stager rather than a user double-click." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_cmd_script_in_user_dir",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_cmd_script_execution.yml",
+            "query_hint": "EventCode=1 Image=*cmd.exe CommandLine=*(\\Users\\*Downloads\\|\\Users\\*Desktop\\|\\Users\\*AppData\\*\\Temp)* CommandLine=*(.cmd|.bat)*"
+          },
+          "mitigations": [
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Block .cmd and .bat file execution from user home directories via Software Restriction Policies or WDAC path rules. Show file extensions in Explorer to expose double-extension tricks." },
+            { "id": "M1021", "name": "Restrict Web-Based Content", "detail": "Enable Mark of the Web (MOTW) enforcement so .cmd/.bat files downloaded from the internet are blocked or warn-gated. Configure email gateway to quarantine .cmd/.bat attachments." }
+          ],
+          "tools": ["cmd.exe", "mshta.exe", "wscript.exe"],
+          "actors": ["TA569 (SocGholish)", "TA4903", "QakBot delivery chains", "IcedID"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_cmd_script_execution", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_cmd_script_execution.yml" },
+            { "label": "CISA Advisory — Phishing via script files", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories" },
+            { "label": "Any.run — common double-extension delivery chains", "type": "report", "url": "https://any.run/" }
+          ],
+          "fpr": "Legitimate IT scripts deployed via GPO or management platforms may reside in user directories temporarily. Allowlist by: signed script-deployment parent (SCCM, Intune), known script hash, and execution within business hours from a managed device. Alert when parent is explorer.exe with recently-modified script file."
+        }
+      ]
+    },
+    "T1021.002": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1021.002-001",
+          "title": "Lateral Movement via Admin Share Access from Workstation",
+          "severity": "high",
+          "statement": "A threat actor with valid credentials is suspected of moving laterally by accessing administrative shares (ADMIN$, C$, IPC$) from a workstation or server that has no legitimate administrative role, using SMB to stage tools or execute commands remotely. Hunt for EID 5140 share access events to ADMIN$ or C$ originating from workstation-class source IPs outside of designated management hosts.",
+          "pivots": [
+            { "label": "WinEvt EID 5140 — admin share access", "detail": "EventID = 5140 AND ShareName IN ('\\\\*\\ADMIN$', '\\\\*\\C$', '\\\\*\\D$', '\\\\*\\IPC$') AND IpAddress NOT IN (known management servers, SCCM, jump hosts, backup agents). Workstation → workstation ADMIN$ access is near-certain lateral movement." },
+            { "label": "Sequential admin share access (beaconing)", "detail": "Same SubjectUserName accessing ADMIN$ on 3+ unique target hosts within 10 minutes — automated lateral movement or network-wide propagation. Correlate with password spray or new logon events on the source host within the preceding hour." },
+            { "label": "File staged to ADMIN$ then executed", "detail": "EID 5145 (file share access) showing file write to ADMIN$ followed within 60s by EID 7045 (new service) or EID 4688 (new process) on the target host from the same user context — canonical tool-push-and-execute pattern." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_susp_admin_share_access",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_admin_share_access.yml",
+            "query_hint": "EventCode=5140 ShareName IN (*ADMIN$,*C$) IpAddress NOT IN (management_ips) | alert when count > 1 unique target within 10min"
+          },
+          "mitigations": [
+            { "id": "M1035", "name": "Limit Access to Resource Over Network", "detail": "Restrict ADMIN$, C$, and IPC$ share access to PAW (Privileged Access Workstation) and management server IPs via host-based firewall. Block lateral SMB (445) workstation-to-workstation at network level." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Deploy LAPS to ensure unique local admin passwords preventing horizontal movement. Tier administrative accounts so domain admin credentials are only used from Tier-0 systems." }
+          ],
+          "tools": ["Impacket smbexec.py", "CrackMapExec", "PsExec", "Metasploit psexec module", "Cobalt Strike jump smb"],
+          "actors": ["APT28", "LockBit 3.0", "Conti", "Black Basta", "FIN6"],
+          "refs": [
+            { "label": "Sigma: win_security_susp_admin_share_access", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_susp_admin_share_access.yml" },
+            { "label": "CISA AA22-040A — Conti lateral movement via admin shares", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-040a" },
+            { "label": "Microsoft — Detecting lateral movement through SMB", "type": "report", "url": "https://www.microsoft.com/en-us/security/blog/" }
+          ],
+          "fpr": "SCCM, Intune, backup agents (Veeam, Commvault), and IT admin tools legitimately access ADMIN$ and C$. Build and maintain an allowlist of management server IPs and service accounts. Alert only on source IPs not in the allowlist, or on access outside maintenance windows, or access by interactive user accounts rather than service accounts."
+        },
+        {
+          "id": "HYP-T1021.002-002",
+          "title": "Impacket smbexec / atexec Named Pipe Access Pattern",
+          "severity": "high",
+          "statement": "A threat actor with valid credentials is suspected of executing commands on a remote Windows host via Impacket's smbexec.py or atexec.py, which create a temporary service or scheduled task over SMB named pipes without writing a persistent file to disk. Hunt for access to \\PIPE\\svcctl or \\PIPE\\atsvc from unusual sources, combined with a transient service creation or scheduled task add event on the target.",
+          "pivots": [
+            { "label": "EID 5145 — named pipe access", "detail": "EventID = 5145 AND RelativeTargetName IN ('\\svcctl', '\\atsvc', '\\samr', '\\lsarpc') AND IpAddress NOT IN (management_servers). smbexec uses \\svcctl to create a cmd.exe-redirected service; atexec uses \\atsvc for remote task scheduling." },
+            { "label": "Transient service with SYSTEM output redirection", "detail": "EID 7045: ServiceName matching random string or BTOBTO pattern AND ImagePath containing cmd.exe /Q /c echo ... > \\\\127.0.0.1\\ADMIN$\\... — the smbexec output-redirect technique. Service appears and disappears within seconds." },
+            { "label": "EID 4688 — cmd.exe /Q process ancestry", "detail": "cmd.exe with CommandLine containing /Q /c (quiet mode, single command) AND ParentImage = services.exe AND IntegrityLevel = System — the shell spawned by smbexec's transient service. Absence of an interactive shell parent is the key differentiator from PsExec." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_security_impacket_lateral_movement",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_impacket_lateral_movement.yml",
+            "query_hint": "EventCode=5145 RelativeTargetName=*svcctl IpAddress NOT IN (mgmt) | join EventCode=7045 [by host] | where timediff < 10s"
+          },
+          "mitigations": [
+            { "id": "M1035", "name": "Limit Access to Resource Over Network", "detail": "Block remote access to svcctl and atsvc named pipes from non-management hosts via Windows Firewall rules restricting SMB (445) access." },
+            { "id": "M1026", "name": "Privileged Account Management", "detail": "Impacket tools require administrator credentials. Enforce LAPS and MFA for admin accounts. Restrict service creation rights to designated service accounts." }
+          ],
+          "tools": ["Impacket smbexec.py", "Impacket atexec.py", "CrackMapExec --exec-method smbexec"],
+          "actors": ["APT41 (Winnti)", "APT39", "FIN6", "Vice Society", "Lazarus Group"],
+          "refs": [
+            { "label": "Sigma: win_security_impacket_lateral_movement", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/security/win_security_impacket_lateral_movement.yml" },
+            { "label": "CISA Advisory — Impacket TTPs", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories" },
+            { "label": "Secureworks — smbexec detection", "type": "report", "url": "https://www.secureworks.com/research" }
+          ],
+          "fpr": "Near-zero FPR for the smbexec-specific pattern (cmd.exe /Q /c with ADMIN$ output path from services.exe). Occasional FPR from legacy monitoring agents that use \\svcctl for health checks — these have stable, signed parent process chains. Alert on any transient service matching the output-redirect pattern."
+        }
+      ]
+    },
+    "T1070.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1070.001-001",
+          "title": "wevtutil.exe Clearing Security or System Event Log",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of using wevtutil.exe to clear one or more Windows event logs — particularly the Security, System, or Application logs — to destroy forensic evidence of their intrusion activity. Hunt for wevtutil.exe with cl or clear-log subcommands targeting these high-value logs, especially when preceded by lateral movement or privilege escalation indicators.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — wevtutil cl", "detail": "Image endswith wevtutil.exe AND CommandLine contains (cl OR clear-log) AND CommandLine contains (Security OR System OR Application OR Microsoft-Windows-PowerShell OR Microsoft-Windows-TerminalServices) — alert as critical when Security log is targeted." },
+            { "label": "WinEvt EID 1102 — Security log cleared", "detail": "EventID = 1102 in the Security log: 'The audit log was cleared.' SubjectUserName is the identity that cleared it. Any 1102 outside of a documented log rotation or decommission activity is an incident. Correlate with preceding 4624 logon for the same user." },
+            { "label": "WinEvt EID 104 — System log cleared", "detail": "EventID = 104 in the System log: 'The event log file was cleared.' Pair with EID 1102 appearing within 60 seconds on the same host — adversaries often clear multiple logs in sequence." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_wevtutil_log_clear",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wevtutil_log_clear.yml",
+            "query_hint": "EventCode=1 Image=*wevtutil* CommandLine=*(cl|clear-log)* CommandLine=*(Security|System|Application)* | alert critical"
+          },
+          "mitigations": [
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Configure SACL on event log files and restrict EventLog service API to SYSTEM and designated log management accounts. Centralise log forwarding to SIEM/syslog before retention on endpoint." },
+            { "id": "M1029", "name": "Remote Data Storage", "detail": "Forward Security, System, and Application logs to a centralised, write-protected log repository in real time. Even if the local log is cleared, the forwarded events are preserved." }
+          ],
+          "tools": ["wevtutil.exe (LOLBIN)", "PowerShell Clear-EventLog", "reg.exe (disabling audit)", "Metasploit clearev"],
+          "actors": ["APT28", "Lazarus Group", "Turla", "Black Basta", "LockBit 3.0"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_wevtutil_log_clear", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wevtutil_log_clear.yml" },
+            { "label": "CISA AA20-301A — APT activity log clearing", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa20-301a" },
+            { "label": "DFIR Report — log clearing in ransomware pre-deployment", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Administrators may clear event logs as part of decommission or rotation procedures. The key differentiators are: unexpected timing (off-hours, no change ticket), the identity (interactive user vs dedicated log service account), and scope (Security log vs application-specific logs). EID 1102 from a non-service account in business context has near-zero legitimate FPR."
+        },
+        {
+          "id": "HYP-T1070.001-002",
+          "title": "PowerShell Clear-EventLog or Remove-EventLog Cmdlet Execution",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of using PowerShell's Clear-EventLog or Remove-EventLog cmdlets to erase audit trails, bypassing the wevtutil.exe signature by using the .NET API path. Hunt for these cmdlets in ScriptBlock logging, particularly when the calling process has elevated privileges and the invocation occurs after lateral movement or credential dumping activity.",
+          "pivots": [
+            { "label": "EID 4104 — ScriptBlock logging", "detail": "EventID = 4104 AND ScriptBlockText contains (Clear-EventLog OR Remove-EventLog OR [System.Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession.ClearLog) — the GlobalSession path is used by advanced actors to avoid the Clear-EventLog alias being flagged." },
+            { "label": "Audit log gap — missing events", "detail": "Gap in Security event log continuity: last EID before gap is 1102, or record numbers jump by >1000 with no 1100 (log service stop). A sudden gap in a high-volume log (Security typically logs thousands of events/hour) is itself a detection signal." },
+            { "label": "EventLog service stop/restart sequence", "detail": "EID 7036: EventLog service entering Stopped state followed within 60s by Starting — indicates direct service manipulation to prevent logging. Correlate with registry writes to HKLM\\SYSTEM\\CurrentControlSet\\Services\\EventLog around the same time." }
+          ],
+          "detection_logic": {
+            "sigma_title": "posh_ps_clear_event_log",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_clear_event_log.yml",
+            "query_hint": "EventCode=4104 ScriptBlockText IN (*Clear-EventLog*,*Remove-EventLog*,*.ClearLog(*)) | alert high"
+          },
+          "mitigations": [
+            { "id": "M1029", "name": "Remote Data Storage", "detail": "Forward all security-relevant logs to a centralised SIEM or syslog server in real time using Windows Event Forwarding (WEF) or a SIEM agent — local log clearing cannot erase already-forwarded events." },
+            { "id": "M1045", "name": "Code Signing", "detail": "Enforce PowerShell Constrained Language Mode and require signed scripts via execution policy — reduces the attack surface for PowerShell-based log manipulation, though privileged actors can still bypass." }
+          ],
+          "tools": ["PowerShell Clear-EventLog", "PowerShell Remove-EventLog", "Metasploit clearev", "CobaltStrike BOF"],
+          "actors": ["APT29 (Midnight Blizzard)", "ALPHV/BlackCat", "Volt Typhoon", "Scattered Spider"],
+          "refs": [
+            { "label": "Sigma: posh_ps_clear_event_log", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/powershell/powershell_script/posh_ps_clear_event_log.yml" },
+            { "label": "CISA AA23-320A — Scattered Spider TTPs", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-320a" },
+            { "label": "Microsoft Security Blog — PowerShell log clearing", "type": "report", "url": "https://www.microsoft.com/en-us/security/blog/" }
+          ],
+          "fpr": "Clear-EventLog is occasionally used by security teams during incident response to clear test logs. PowerShell script hosting platforms (Ansible, DSC) may call log management cmdlets. Scope alerts to the Security and System log targets by non-service-account identities. Pair with privileged logon context to reduce noise."
+        }
+      ]
+    },
+    "T1218.011": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1218.011-001",
+          "title": "rundll32.exe Loading DLL from User-Writable or Staging Path",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of using rundll32.exe to execute a malicious DLL dropped in a user-writable directory, abusing the signed Microsoft binary to bypass application control and load arbitrary code. Hunt for rundll32.exe with arguments pointing to DLLs in %TEMP%, %APPDATA%, %PUBLIC%, or C:\\ProgramData, particularly when the DLL is unsigned or newly created.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — staging path DLL", "detail": "Image endswith rundll32.exe AND CommandLine contains (.dll AND (\\AppData\\ OR \\Temp\\ OR \\Users\\Public\\ OR \\ProgramData\\ OR \\Desktop\\)). Exclude known legitimate paths: %WINDIR%\\System32\\, %ProgramFiles\\." },
+            { "label": "Sysmon EID 7 — unsigned or untrusted DLL load", "detail": "Image = rundll32.exe AND ImageLoaded NOT in (%SystemRoot%\\* OR %ProgramFiles%\\*) AND (Signed = false OR SignatureStatus IN (Untrusted, Expired, Revoked)). Combine with load path check for strong signal." },
+            { "label": "Network connection from rundll32.exe", "detail": "Sysmon EID 3: Image = rundll32.exe making outbound TCP connection to external IP or unusual port (not 80/443 to known CDN). rundll32.exe has no legitimate reason to initiate network connections in most enterprise environments." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_rundll32_susp_params",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_susp_params.yml",
+            "query_hint": "EventCode=1 Image=*rundll32.exe CommandLine=*(\\AppData\\|\\Temp\\|\\Users\\Public\\|\\ProgramData\\)*.dll"
+          },
+          "mitigations": [
+            { "id": "M1050", "name": "Exploit Protection", "detail": "Apply WDAC or AppLocker DLL rules to prevent rundll32.exe from loading DLLs from user-writable directories. Enable Exploit Guard's Attack Surface Reduction for 'Block Win32 API calls from Office macros'." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Configure WDAC code integrity policy to block unsigned DLL loads by rundll32.exe. Script enforcement levels in WDAC can prohibit DLL execution from non-trusted paths." }
+          ],
+          "tools": ["rundll32.exe (LOLBIN)", "Cobalt Strike (dll stager)", "Meterpreter reflective DLL", "Empire PowerDll"],
+          "actors": ["APT29 (Midnight Blizzard)", "TA505", "FIN7", "Lazarus Group", "MuddyWater"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_rundll32_susp_params", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_susp_params.yml" },
+            { "label": "LOLBAS: rundll32.exe", "type": "lolbas", "url": "https://lolbas-project.github.io/lolbas/Binaries/Rundll32/" },
+            { "label": "Red Canary TDR — rundll32 abuse", "type": "report", "url": "https://redcanary.com/threat-detection-report/" }
+          ],
+          "fpr": "rundll32.exe is heavily used by Windows itself and legitimate applications. Common legitimate patterns include Control Panel applets (.cpl), PrintUI.dll,PrintUIEntry, shell32.dll functions, and InstallHinfSection. Build a positive allowlist of known-good CommandLine patterns and alert on everything outside it — the set of legitimate uses is finite and documentable."
+        },
+        {
+          "id": "HYP-T1218.011-002",
+          "title": "rundll32.exe Spawning Unexpected Child Process",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of using a malicious DLL loaded by rundll32.exe to spawn a child shell, interpreter, or command execution process, escalating from DLL execution to interactive or scripted command access. Hunt for cmd.exe, powershell.exe, mshta.exe, or wscript.exe with rundll32.exe as the direct parent.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — suspicious child of rundll32", "detail": "ParentImage endswith rundll32.exe AND Image IN (cmd.exe, powershell.exe, powershell_ise.exe, mshta.exe, wscript.exe, cscript.exe, regsvr32.exe, certutil.exe, bitsadmin.exe, curl.exe, wget.exe) — rundll32.exe has no legitimate reason to spawn these processes in most environments." },
+            { "label": "Discovery commands from rundll32 child", "detail": "cmd.exe with ParentImage=rundll32.exe AND CommandLine contains (whoami OR net user OR net localgroup OR ipconfig OR netstat OR systeminfo) within 30 seconds of parent creation — initial discovery burst following DLL execution." },
+            { "label": "rundll32 network + child chain", "detail": "EID 3: rundll32.exe making outbound connection AND within 60s EID 1: child process created from same rundll32.exe. The combination of outbound C2 beacon AND child process spawn is the full initial-access-to-execution chain." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_rundll32_susp_child_process",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_susp_child_process.yml",
+            "query_hint": "EventCode=1 ParentImage=*rundll32.exe Image IN (*cmd.exe,*powershell.exe,*mshta.exe,*wscript.exe,*certutil.exe)"
+          },
+          "mitigations": [
+            { "id": "M1040", "name": "Behavior Prevention on Endpoint", "detail": "Configure EDR or Windows Defender to block rundll32.exe from spawning cmd.exe, PowerShell, or script interpreters. ASR rule 'Block executable content from email client and webmail' addresses delivery vector." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "WDAC publisher rules can prevent unsigned DLLs that would cause suspicious spawning from loading in the first place. Chain with code integrity enforcement." }
+          ],
+          "tools": ["rundll32.exe (LOLBIN)", "Cobalt Strike DLL implant", "Empire DLL stager"],
+          "actors": ["APT28", "APT29", "FIN7", "TA505", "BRONZE STARLIGHT"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_rundll32_susp_child_process", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_susp_child_process.yml" },
+            { "label": "Red Canary TDR — rundll32 child processes", "type": "report", "url": "https://redcanary.com/threat-detection-report/" },
+            { "label": "MITRE ATT&CK — T1218.011 procedure examples", "type": "report", "url": "https://attack.mitre.org/techniques/T1218/011/" }
+          ],
+          "fpr": "Some legitimate software (e.g., older printer driver installers, COM surrogate hosts) spawn processes from rundll32.exe in controlled ways. Allowlist by: signed DLL with known publisher, specific CommandLine pattern matching a known installer, and execution correlated with a software deployment event. Alert on unsigned or staging-path DLL parents unconditionally."
+        },
+        {
+          "id": "HYP-T1218.011-003",
+          "title": "rundll32.exe Executing JavaScript or VBScript via url.dll",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of abusing the url.dll OpenURL export in rundll32.exe to execute arbitrary JavaScript or VBScript inline, bypassing script-execution controls that restrict wscript.exe and cscript.exe. Hunt for rundll32.exe CommandLines containing url.dll,OpenURL or the javascript: / vbscript: URI scheme.",
+          "pivots": [
+            { "label": "Sysmon EID 1 — url.dll JavaScript execution", "detail": "Image endswith rundll32.exe AND CommandLine contains (url.dll,OpenURL OR url.dll#OpenURL OR javascript: OR vbscript:). Also: CommandLine contains ieframe.dll,OpenURL or shdocvw.dll — alternative DLL exports serving the same function in older Windows versions." },
+            { "label": "CommandLine with encoded script payload", "detail": "CommandLine contains javascript: followed by atob( or eval( or String.fromCharCode( — base64-decoded or character-array encoded script to bypass string-based detection. Alert on any javascript: URI containing >50 non-space characters." },
+            { "label": "Network connection from rundll32 → url.dll", "detail": "Sysmon EID 3: rundll32.exe making HTTP/HTTPS connection within 5 seconds of process creation containing url.dll in CommandLine — indicates a remote-resource fetch via the OpenURL mechanism (downloading and executing remote script or HTA)." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_rundll32_url_file",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_url_file.yml",
+            "query_hint": "EventCode=1 Image=*rundll32.exe CommandLine=*(url.dll*OpenURL|javascript:|vbscript:)*"
+          },
+          "mitigations": [
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Block rundll32.exe from accessing url.dll via WDAC DLL rules. Configure Windows Defender SmartScreen to block javascript: and vbscript: URI schemes." },
+            { "id": "M1021", "name": "Restrict Web-Based Content", "detail": "Disable the javascript: URI handler in Internet Explorer Zone settings via GPO (IExplore security zones → Scripting → Active scripting → Disabled for Internet zone)." }
+          ],
+          "tools": ["rundll32.exe (LOLBIN)", "url.dll", "ieframe.dll", "mshta.exe (alternative)"],
+          "actors": ["Lazarus Group", "TA505", "TA570 (QakBot)", "Emotet delivery chains"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_rundll32_url_file", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_rundll32_url_file.yml" },
+            { "label": "LOLBAS: rundll32 url.dll technique", "type": "lolbas", "url": "https://lolbas-project.github.io/lolbas/Binaries/Rundll32/" },
+            { "label": "Any.run — QakBot url.dll delivery", "type": "report", "url": "https://any.run/malware-trends/" }
+          ],
+          "fpr": "url.dll,OpenURL is used by Windows itself for .url shortcut file handling and IE-integrated applications. The key differentiator is the inline javascript: or vbscript: URI scheme (not a file path). Legitimate usage always references a file path, not an inline script. FPR is near-zero for the javascript:/vbscript: pattern."
+        }
+      ]
+    },
+    "T1547.001": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1547.001-001",
+          "title": "Registry Run Key Set to Binary in Staging or User-Writable Path",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of establishing persistence by writing a registry Run or RunOnce key that points to a malicious binary in a user-writable or staging directory, ensuring execution at the next user logon. Hunt for registry writes to HKCU or HKLM Run keys where the value data points to executables in %TEMP%, %APPDATA%, %PUBLIC%, or C:\\ProgramData rather than %ProgramFiles% or %SystemRoot%.",
+          "pivots": [
+            { "label": "Sysmon EID 13 — Run key in staging path", "detail": "TargetObject contains (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run OR HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run OR HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run) AND Details contains (\\AppData\\ OR \\Temp\\ OR \\Users\\Public\\ OR \\ProgramData\\) AND Image NOT IN (msiexec.exe, ccmexec.exe)" },
+            { "label": "Sysmon EID 13 — RunOnce key write", "detail": "TargetObject contains (CurrentVersion\\RunOnce OR CurrentVersion\\RunOnceEx) AND Details contains executable extension (.exe, .bat, .cmd, .ps1, .vbs) — RunOnce keys with script content in user paths are commonly used by info-stealers and droppers for single-run persistence." },
+            { "label": "New value from non-installer process", "detail": "EID 13 where Image NOT IN (msiexec.exe, setup*.exe, installer*.exe, ccmsetup.exe) AND TargetObject in Run key — persistence set by cmd.exe, powershell.exe, wscript.exe, or an unusual binary has no legitimate explanation outside installer context." }
+          ],
+          "detection_logic": {
+            "sigma_title": "registry_set_susp_run_key_img_folder",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_susp_run_key_img_folder.yml",
+            "query_hint": "EventCode=13 TargetObject=*\\CurrentVersion\\Run* Details=*(\\AppData\\|\\Temp\\|\\Users\\Public\\|\\ProgramData\\)* Image NOT IN (*msiexec*)"
+          },
+          "mitigations": [
+            { "id": "M1024", "name": "Restrict Registry Permissions", "detail": "Apply restrictive ACLs to HKLM Run key — allow writes only by SYSTEM and signed installers. HKCU Run cannot be restricted without removing user rights, so focus detection on HKCU and enforce path-based rules." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "WDAC startup enforcement rules can block Run-key-launched binaries that are unsigned or not in %ProgramFiles%. ASR rule 'Block persistence through WMI event subscription' covers related persistence vectors." }
+          ],
+          "tools": ["reg.exe", "PowerShell Set-ItemProperty", "Cobalt Strike (registry persistence)", "Quasar RAT", "AsyncRAT", "Agent Tesla"],
+          "actors": ["TA453 (APT35/Charming Kitten)", "Lazarus Group", "APT28", "FIN7", "Agent Tesla campaigns"],
+          "refs": [
+            { "label": "Sigma: registry_set_susp_run_key_img_folder", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/registry/registry_set/registry_set_susp_run_key_img_folder.yml" },
+            { "label": "Red Canary TDR — Registry Run key abuse", "type": "report", "url": "https://redcanary.com/threat-detection-report/" },
+            { "label": "CISA AA22-320A — TA453 persistence via Run keys", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories" }
+          ],
+          "fpr": "Software installers (msiexec.exe, Inno Setup, NSIS) legitimately write Run keys during installation — these always have signed parents and paths under %ProgramFiles%. Microsoft Update and OneDrive write Run keys with paths under %ProgramFiles% or %LocalAppData%\\Programs (a known exception to the staging-path rule). Alert on unsigned binary targets in staging paths unconditionally."
+        },
+        {
+          "id": "HYP-T1547.001-002",
+          "title": "File Dropped into Windows Startup Folder by Non-Installer Process",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of placing a malicious script or shortcut in the Windows Startup folder to achieve persistence without modifying the registry, ensuring execution at every user logon. Hunt for file creation events in the per-user or all-users Startup directory from any process that is not a signed software installer.",
+          "pivots": [
+            { "label": "Sysmon EID 11 — file created in Startup folder", "detail": "TargetFilename contains (C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ OR C:\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\) AND extension IN (.lnk, .bat, .cmd, .vbs, .js, .hta, .exe, .ps1) AND Image NOT IN (msiexec.exe, explorer.exe, ccmexec.exe)" },
+            { "label": "LNK shortcut pointing to staging path", "detail": "Sysmon EID 11: .lnk file created in Startup directory, followed by Sysmon EID 23 or a read of the newly-created .lnk. If the LNK TargetPath (readable via file inspection or LNK parser) points to %TEMP%, %APPDATA%, or a UNC path, it confirms persistence to a remotely staged payload." },
+            { "label": "Startup folder modification by PowerShell or cmd", "detail": "EID 1: powershell.exe or cmd.exe creating a file in the Startup path via Copy-Item, cp, xcopy, or redirect (>). This pattern is used by malware that downloads a payload then installs Startup persistence in a second step." }
+          ],
+          "detection_logic": {
+            "sigma_title": "file_event_win_startup_folder_file_write",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/file/file_event/file_event_win_startup_folder_file_write.yml",
+            "query_hint": "EventCode=11 TargetFilename=*\\Startup\\* Image NOT IN (*msiexec*,*explorer*,*ccmexec*)"
+          },
+          "mitigations": [
+            { "id": "M1022", "name": "Restrict File and Directory Permissions", "detail": "Set SACL on Startup folder directories to alert on file writes. Apply WDAC startup enforcement — binaries in Startup folder can be subjected to the same code integrity checks as any other execution path." },
+            { "id": "M1038", "name": "Execution Prevention", "detail": "Use WDAC or AppLocker to block execution of script files (.bat, .vbs, .js, .hta, .cmd) from the Startup folder for non-administrative users." }
+          ],
+          "tools": ["PowerShell", "cmd.exe", "reg.exe", "Metasploit persistence module", "Quasar RAT", "NjRAT"],
+          "actors": ["MuddyWater", "APT-C-36 (Blind Eagle)", "Transparent Tribe", "TA453"],
+          "refs": [
+            { "label": "Sigma: file_event_win_startup_folder_file_write", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/file/file_event/file_event_win_startup_folder_file_write.yml" },
+            { "label": "Trend Micro — Startup folder persistence", "type": "report", "url": "https://www.trendmicro.com/vinfo/us/security/research-and-analysis/" },
+            { "label": "MITRE ATT&CK — T1547.001 procedure examples", "type": "report", "url": "https://attack.mitre.org/techniques/T1547/001/" }
+          ],
+          "fpr": "Software deployment tools (SCCM, Intune, PDQ Deploy) may place shortcuts in the Startup folder as part of managed application deployment. These always have a signed installer parent and the resulting shortcut target is a signed binary in %ProgramFiles%. Alert on script files (.vbs, .bat, .ps1) in Startup folders without restriction — there is no legitimate use case for script-based Startup folder entries outside managed deployment with a change ticket."
+        }
+      ]
+    },
+    "T1041": {
+      "hypotheses": [
+        {
+          "id": "HYP-T1041-001",
+          "title": "Anomalous Large Outbound Upload Over Established C2 Beacon",
+          "severity": "high",
+          "statement": "A threat actor who has established a C2 channel is suspected of exfiltrating collected data over the same beacon channel, producing an anomalous spike in outbound data volume to a previously low-volume C2 destination. Hunt for established HTTPS connections with significantly asymmetric upload-to-download ratios (high upload, low download) to external IPs or recently-registered domains that have been communicating in a periodic, low-volume pattern.",
+          "pivots": [
+            { "label": "Netflow / proxy: upload volume spike", "detail": "Same external IP or FQDN that had < 1 KB/hr average outbound suddenly transfers >10 MB in a single session — consistent with staged archive exfiltration over an existing beacon. Filter to connections on port 443 with consistent inter-beacon jitter matching C2 profile." },
+            { "label": "Sysmon EID 3 — process + byte counts", "detail": "Image IN (cmd.exe, powershell.exe, rundll32.exe, regsvr32.exe, mshta.exe, wscript.exe, known-C2-process) making outbound connection with bytes_sent > 5 MB to an IP with low historical connection count. Non-browser process uploading >5 MB is near-certain exfil." },
+            { "label": "DNS resolution spike before upload", "detail": ">3 DNS queries to the same FQDN within 5 minutes (C2 jitter check-in pattern) followed by a long-lived TCP session on 443 with upload bytes exceeding 5 MB — the pre-exfil beacon check-in pattern seen in Cobalt Strike, Havoc, and Sliver." }
+          ],
+          "detection_logic": {
+            "sigma_title": "net_connection_win_susp_outbound_large_upload",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/network_connection/net_connection_win_susp_outbound_conn.yml",
+            "query_hint": "EventCode=3 Initiated=true Destination NOT IN (known_cdns, trusted_ips) bytes_sent > 5MB Image NOT IN (*chrome*,*msedge*,*onedrive*)"
+          },
+          "mitigations": [
+            { "id": "M1031", "name": "Network Intrusion Prevention", "detail": "Deploy SSL/TLS inspection on the egress proxy to inspect HTTPS content for data-loss indicators. Alert on outbound sessions with upload bytes > 10 MB from non-approved applications." },
+            { "id": "M1057", "name": "Data Loss Prevention", "detail": "Configure DLP policies on the network egress and endpoint to detect and block outbound transfers of sensitive file types (.xlsx, .docx, .pdf, PII patterns) regardless of the channel." }
+          ],
+          "tools": ["Cobalt Strike exfil", "Metasploit post/multi/gather", "CobaltStrike upload", "PowerShell HTTPS exfil", "Havoc C2"],
+          "actors": ["APT29 (Midnight Blizzard)", "APT41", "FIN7", "Lazarus Group", "ALPHV/BlackCat (pre-encryption exfil)"],
+          "refs": [
+            { "label": "Sigma: net_connection_win_susp_outbound_conn", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/network_connection/net_connection_win_susp_outbound_conn.yml" },
+            { "label": "CISA AA23-320A — Scattered Spider data exfiltration", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-320a" },
+            { "label": "Vectra AI — C2 exfil over HTTPS detection", "type": "report", "url": "https://www.vectra.ai/resources" }
+          ],
+          "fpr": "Cloud sync clients (OneDrive, Dropbox, Google Drive) and backup agents produce large uploads routinely. Allowlist by: signed process (OneDrive.exe, Dropbox.exe, backup agent binary), known cloud storage IP ranges, and upload pattern matching sync schedules. Alert on unsigned or unexpected process uploading >5 MB to an external IP not in the approved cloud provider list."
+        },
+        {
+          "id": "HYP-T1041-002",
+          "title": "Staged Archive Created then Transferred Over C2 or Outbound Channel",
+          "severity": "high",
+          "statement": "A threat actor on Windows is suspected of compressing collected data into an archive before exfiltrating it over an established C2 channel or direct outbound connection, following the classic collect-stage-exfil pattern. Hunt for archive creation events in staging paths followed within minutes by an outbound network connection from the same process or parent chain.",
+          "pivots": [
+            { "label": "Sysmon EID 11 — archive in staging path", "detail": "TargetFilename endswith (.zip OR .7z OR .rar OR .tar OR .gz OR .cab) AND TargetFilename path matches (\\Temp\\ OR \\ProgramData\\ OR \\Users\\Public\\ OR \\AppData\\Roaming\\) AND Image NOT IN (winrar.exe, 7zFM.exe, explorer.exe) — automated archiving from cmd.exe, powershell.exe, or unknown binary in staging path." },
+            { "label": "Sysmon EID 3 — outbound within 300s of archive creation", "detail": "Correlate: EID 11 archive creation AND within 300s EID 3 outbound TCP to external IP from same HostID AND Image IN (powershell.exe, curl.exe, certutil.exe, bitsadmin.exe, cmd.exe). The tight time window between archive and upload confirms exfil intent." },
+            { "label": "7-Zip or WinRAR with password flag in CLI", "detail": "Sysmon EID 1: 7z.exe OR rar.exe CommandLine contains (-p OR -hp) — password-protected archive is a red flag for data staging. Combined with output path in a temp/public directory, this is high confidence pre-exfil staging." }
+          ],
+          "detection_logic": {
+            "sigma_title": "proc_creation_win_7zip_compression_staging",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_7zip_compression.yml",
+            "query_hint": "EventCode=11 TargetFilename=*(\\Temp\\|\\ProgramData\\)*.zip | followby EventCode=3 Initiated=true Destination NOT IN (known_ips) within 300s [by host]"
+          },
+          "mitigations": [
+            { "id": "M1057", "name": "Data Loss Prevention", "detail": "Inspect outbound traffic for compressed archives containing sensitive file types. Block upload of password-protected archives from non-approved applications via DLP policy." },
+            { "id": "M1031", "name": "Network Intrusion Prevention", "detail": "Monitor egress proxy for large compressed payloads uploaded to cloud storage or direct IPs. Flag sessions where Content-Type indicates archive formats (application/zip, application/x-7z) from non-standard applications." }
+          ],
+          "tools": ["7-Zip", "WinRAR", "PowerShell Compress-Archive", "tar.exe (Windows 10+)", "curl.exe", "certutil.exe"],
+          "actors": ["APT29", "Lazarus Group", "FIN7", "Cl0p (pre-ransomware exfil)", "ALPHV/BlackCat"],
+          "refs": [
+            { "label": "Sigma: proc_creation_win_7zip_compression", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_7zip_compression.yml" },
+            { "label": "CISA AA23-075A — LockBit data exfil before encryption", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a" },
+            { "label": "DFIR Report — staged archive exfil chain", "type": "report", "url": "https://thedfirreport.com/" }
+          ],
+          "fpr": "Legitimate backup scripts and IT archiving tools create password-protected archives in ProgramData regularly. Allowlist by: signed archiver binary launched by a known backup service account, archive destination matching a backup share path, and scheduled (not interactive) execution context. Alert on interactive user or attacker-linked process creating archives in staging paths followed by outbound transfer."
+        },
+        {
+          "id": "HYP-T1041-003",
+          "title": "DNS Tunneling Exfiltration via High-Volume Subdomain Queries",
+          "severity": "medium",
+          "statement": "A threat actor on a compromised host is suspected of exfiltrating data using DNS tunneling, encoding collected data as subdomain labels in queries to an attacker-controlled domain, using DNS responses as the return channel. Hunt for anomalously high volumes of unique subdomain queries to a single apex domain, particularly where subdomain labels are long, high-entropy, and not resolvable to real resources.",
+          "pivots": [
+            { "label": "DNS query volume anomaly", "detail": ">50 unique FQDN queries to the same apex domain within 60 minutes from a single endpoint, where the subdomains are not repeating (i.e., >40 unique subdomain labels). This pattern matches DNS tunnel data chunking — each query carries ~30–60 bytes of base32/hex-encoded data." },
+            { "label": "Subdomain label entropy", "detail": "Subdomain labels with entropy > 3.5 bits/character and length > 20 characters are characteristic of base32 or hex-encoded payloads. Legitimate CDNs and cloud services use short, readable, or structured subdomain labels." },
+            { "label": "DNS record types: TXT and NULL queries", "detail": "DNS queries for TXT, NULL, or ANY record types to a single domain at high volume (>20 TXT queries/hour) — DNS tunneling tools (dnscat2, iodine) use TXT/NULL records for return data due to higher response size limits versus A records." }
+          ],
+          "detection_logic": {
+            "sigma_title": "win_dns_exfiltration_domain_query_anomaly",
+            "sigma_url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/dns_query/dns_query_win_susp_query_a_record.yml",
+            "query_hint": "dns_query rrtype IN (TXT,NULL) | stats count by apex_domain | where count > 50 AND unique_subdomains > 40"
+          },
+          "mitigations": [
+            { "id": "M1037", "name": "Filter Network Traffic", "detail": "Restrict DNS resolution to an enterprise recursive resolver with RPZ (Response Policy Zones) blocking newly-registered and uncategorised domains. Log all DNS queries and forward to SIEM for volume anomaly detection." },
+            { "id": "M1031", "name": "Network Intrusion Prevention", "detail": "Deploy DNS security solutions (Cisco Umbrella, Infoblox TIDE, Palo Alto DNS Security) that detect high-entropy subdomain patterns, tunnel fingerprints (dnscat2, iodine signatures), and block DNS tunneling at the resolver." }
+          ],
+          "tools": ["dnscat2", "iodine", "dns2tcp", "Custom PowerShell DNS exfil", "Cobalt Strike DNS C2"],
+          "actors": ["APT29", "Turla (ComRAT DNS channel)", "Lazarus Group", "OilRig (APT34)", "Volt Typhoon"],
+          "refs": [
+            { "label": "Sigma: dns_query_win_susp_query_a_record", "type": "sigma", "url": "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/dns_query/dns_query_win_susp_query_a_record.yml" },
+            { "label": "CISA — Turla ComRAT DNS exfiltration analysis", "type": "advisory", "url": "https://www.cisa.gov/news-events/cybersecurity-advisories" },
+            { "label": "Infoblox — DNS tunneling detection research", "type": "report", "url": "https://www.infoblox.com/resources/" }
+          ],
+          "fpr": "CDN domains (Cloudflare, Akamai, Fastly) use long randomised subdomain labels for asset addressing — these appear high-entropy but repeat on subsequent queries. Allowlist apex domains in the Alexa/Tranco top 10K. Alert on: apex domains registered <30 days ago, domains not categorised in threat intelligence feeds, and TXT/NULL record volume anomalies to uncategorised domains."
+        }
+      ]
     }
   }
 }

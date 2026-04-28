@@ -905,32 +905,23 @@ body.light .hyp-detect-query { border-left-color: var(--accent); }
 .hyp-mitigation-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
   margin-top: 4px;
 }
 .hyp-mitigation-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  padding: 3px 9px 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--panel2);
-  color: var(--text);
-  cursor: default;
-  transition: border-color .12s;
-}
-.hyp-mitigation-chip:hover { border-color: var(--muted); }
-.hyp-mitigation-id {
   font-family: 'Share Tech Mono', monospace;
-  font-size: 9px;
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid rgba(0,255,159,0.3);
+  border-radius: 3px;
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  padding: 1px 5px;
-  border-radius: 2px;
   letter-spacing: 0.04em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color .12s, border-color .12s;
 }
+.hyp-mitigation-chip:hover { color: var(--text); border-color: var(--muted); }
+body.light .hyp-mitigation-chip { border-color: rgba(0,119,255,0.3); }
 
 
 .hyp-summary {

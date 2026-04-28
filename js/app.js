@@ -15,10 +15,12 @@ let _dataReady    = false;
 let _pendingQuery = null;
 let _lastResult   = null;
 
-const _activePlatforms = new Set();
-const _activeSources   = new Set();
-const _activeActors    = new Set();
-const _mySources       = new Set();
+const _activePlatforms  = new Set();
+const _activeSources    = new Set();
+const _activeActors     = new Set();
+const _activeMits       = new Set();
+const _activeComponents = new Set();
+const _mySources        = new Set();
 window.__coverageSources = _mySources;
 
 function download(filename, content, type) {
@@ -170,7 +172,8 @@ window.__toggleCoveragePanel = function() {
 
 function applyFilters(result) {
   if (!result || result.type === 'not-found') return result;
-  if (!_activePlatforms.size && !_activeSources.size && !_activeActors.size) return result;
+  if (!_activePlatforms.size && !_activeSources.size && !_activeActors.size &&
+      !_activeMits.size && !_activeComponents.size) return result;
 
   let actorTechSet = null;
   if (_activeActors.size) {
@@ -182,9 +185,14 @@ function applyFilters(result) {
   }
 
   const items = result.items.filter(t => {
-    if (_activePlatforms.size && !t.platforms.some(p => _activePlatforms.has(p))) return false;
-    if (_activeSources.size  && !t.ds.some(ds => _activeSources.has(ds.split(':')[0].trim()))) return false;
-    if (actorTechSet && !actorTechSet.has(t.id)) return false;
+    if (_activePlatforms.size  && !t.platforms.some(p => _activePlatforms.has(p))) return false;
+    if (_activeSources.size    && !t.ds.some(ds => _activeSources.has(ds.split(':')[0].trim()))) return false;
+    if (actorTechSet           && !actorTechSet.has(t.id)) return false;
+    if (_activeMits.size       && !(t.mits || []).some(m => _activeMits.has(m.id))) return false;
+    if (_activeComponents.size && !t.ds.some(ds => {
+      const c = ds.split(':')[1]?.trim();
+      return c && _activeComponents.has(c);
+    })) return false;
     return true;
   });
   return { ...result, items, _total: result.items.length };
@@ -197,6 +205,10 @@ function syncFilterUI() {
     el.classList.toggle('active', _activeSources.has(el.dataset.src)));
   document.querySelectorAll('.hyp-fchip[data-actor]').forEach(el =>
     el.classList.toggle('active', _activeActors.has(el.dataset.actor)));
+  document.querySelectorAll('.hyp-fchip[data-mit]').forEach(el =>
+    el.classList.toggle('active', _activeMits.has(el.dataset.mit)));
+  document.querySelectorAll('.hyp-fchip[data-comp]').forEach(el =>
+    el.classList.toggle('active', _activeComponents.has(el.dataset.comp)));
   document.querySelectorAll('.hyp-fdropdown-item[data-actor]').forEach(el => {
     const active = _activeActors.has(el.dataset.actor);
     el.classList.toggle('active', active);
@@ -209,7 +221,20 @@ function syncFilterUI() {
     const check = el.querySelector('.hyp-fdropdown-check');
     if (check) check.textContent = active ? '✓' : '';
   });
-  const anyActive = _activePlatforms.size > 0 || _activeSources.size > 0 || _activeActors.size > 0;
+  document.querySelectorAll('.hyp-fdropdown-item[data-mit]').forEach(el => {
+    const active = _activeMits.has(el.dataset.mit);
+    el.classList.toggle('active', active);
+    const check = el.querySelector('.hyp-fdropdown-check');
+    if (check) check.textContent = active ? '✓' : '';
+  });
+  document.querySelectorAll('.hyp-fdropdown-item[data-comp]').forEach(el => {
+    const active = _activeComponents.has(el.dataset.comp);
+    el.classList.toggle('active', active);
+    const check = el.querySelector('.hyp-fdropdown-check');
+    if (check) check.textContent = active ? '✓' : '';
+  });
+  const anyActive = _activePlatforms.size > 0 || _activeSources.size > 0 || _activeActors.size > 0 ||
+    _activeMits.size > 0 || _activeComponents.size > 0;
   document.getElementById('hyp-filter-clear')?.classList.toggle('visible', anyActive);
 }
 
@@ -235,10 +260,24 @@ window.__toggleActor = id => {
   rerender();
 };
 
+window.__toggleMit = id => {
+  _activeMits.has(id) ? _activeMits.delete(id) : _activeMits.add(id);
+  syncFilterUI();
+  rerender();
+};
+
+window.__toggleComponent = c => {
+  _activeComponents.has(c) ? _activeComponents.delete(c) : _activeComponents.add(c);
+  syncFilterUI();
+  rerender();
+};
+
 window.__clearFilters = () => {
   _activePlatforms.clear();
   _activeSources.clear();
   _activeActors.clear();
+  _activeMits.clear();
+  _activeComponents.clear();
   syncFilterUI();
   rerender();
 };
@@ -393,6 +432,156 @@ function attachDropdown(chipsEl, allItems) {
   row.appendChild(wrap);
 }
 
+function attachMitDropdown(chipsEl, allMits) {
+  const row = chipsEl.closest('.hyp-filter-row');
+  if (!row) return;
+
+  const wrap    = document.createElement('div');
+  wrap.className = 'hyp-fdropdown-wrap';
+
+  const trigger = document.createElement('span');
+  trigger.className   = 'hyp-fdropdown-trigger';
+  trigger.textContent = `▾ ALL (${allMits.length})`;
+
+  const panel   = document.createElement('div');
+  panel.className = 'hyp-fdropdown';
+
+  const searchEl = document.createElement('input');
+  searchEl.type        = 'text';
+  searchEl.className   = 'hyp-fdropdown-search';
+  searchEl.placeholder = 'Search mitigations…';
+
+  const listEl = document.createElement('div');
+  listEl.className = 'hyp-fdropdown-list';
+
+  function renderItems(items) {
+    listEl.innerHTML = '';
+    for (const m of items) {
+      const item  = document.createElement('div');
+      item.className  = `hyp-fdropdown-item${_activeMits.has(m.id) ? ' active' : ''}`;
+      item.dataset.mit = m.id;
+
+      const check = document.createElement('span');
+      check.className   = 'hyp-fdropdown-check';
+      check.textContent = _activeMits.has(m.id) ? '✓' : '';
+
+      const name = document.createElement('span');
+      name.textContent = `${m.id} · ${m.name}`;
+
+      const cnt = document.createElement('span');
+      cnt.className   = 'hyp-fdropdown-count';
+      cnt.textContent = m.count;
+
+      item.append(check, name, cnt);
+      item.addEventListener('click', () => {
+        window.__toggleMit(m.id);
+        const active = _activeMits.has(m.id);
+        item.classList.toggle('active', active);
+        check.textContent = active ? '✓' : '';
+      });
+      listEl.appendChild(item);
+    }
+  }
+
+  searchEl.addEventListener('input', () => {
+    const q = searchEl.value.toLowerCase();
+    renderItems(q ? allMits.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)) : allMits);
+  });
+
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = panel.classList.toggle('open');
+    trigger.classList.toggle('open', isOpen);
+    if (isOpen) { renderItems(allMits); searchEl.value = ''; setTimeout(() => searchEl.focus(), 0); }
+  });
+
+  document.addEventListener('click', e => {
+    if (!wrap.contains(e.target)) {
+      panel.classList.remove('open');
+      trigger.classList.remove('open');
+    }
+  });
+
+  panel.append(searchEl, listEl);
+  wrap.append(trigger, panel);
+  row.appendChild(wrap);
+}
+
+function attachCompDropdown(chipsEl, allComps) {
+  const row = chipsEl.closest('.hyp-filter-row');
+  if (!row) return;
+
+  const wrap    = document.createElement('div');
+  wrap.className = 'hyp-fdropdown-wrap';
+
+  const trigger = document.createElement('span');
+  trigger.className   = 'hyp-fdropdown-trigger';
+  trigger.textContent = `▾ ALL (${allComps.length})`;
+
+  const panel   = document.createElement('div');
+  panel.className = 'hyp-fdropdown';
+
+  const searchEl = document.createElement('input');
+  searchEl.type        = 'text';
+  searchEl.className   = 'hyp-fdropdown-search';
+  searchEl.placeholder = 'Search components…';
+
+  const listEl = document.createElement('div');
+  listEl.className = 'hyp-fdropdown-list';
+
+  function renderItems(items) {
+    listEl.innerHTML = '';
+    for (const c of items) {
+      const item  = document.createElement('div');
+      item.className  = `hyp-fdropdown-item${_activeComponents.has(c.name) ? ' active' : ''}`;
+      item.dataset.comp = c.name;
+
+      const check = document.createElement('span');
+      check.className   = 'hyp-fdropdown-check';
+      check.textContent = _activeComponents.has(c.name) ? '✓' : '';
+
+      const name = document.createElement('span');
+      name.textContent = c.name;
+
+      const cnt = document.createElement('span');
+      cnt.className   = 'hyp-fdropdown-count';
+      cnt.textContent = c.count;
+
+      item.append(check, name, cnt);
+      item.addEventListener('click', () => {
+        window.__toggleComponent(c.name);
+        const active = _activeComponents.has(c.name);
+        item.classList.toggle('active', active);
+        check.textContent = active ? '✓' : '';
+      });
+      listEl.appendChild(item);
+    }
+  }
+
+  searchEl.addEventListener('input', () => {
+    const q = searchEl.value.toLowerCase();
+    renderItems(q ? allComps.filter(c => c.name.toLowerCase().includes(q)) : allComps);
+  });
+
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = panel.classList.toggle('open');
+    trigger.classList.toggle('open', isOpen);
+    if (isOpen) { renderItems(allComps); searchEl.value = ''; setTimeout(() => searchEl.focus(), 0); }
+  });
+
+  document.addEventListener('click', e => {
+    if (!wrap.contains(e.target)) {
+      panel.classList.remove('open');
+      trigger.classList.remove('open');
+    }
+  });
+
+  panel.append(searchEl, listEl);
+  wrap.append(trigger, panel);
+  row.appendChild(wrap);
+}
+
 function initFilters(data) {
   const PLATFORM_ORDER = [
     'Windows', 'Linux', 'macOS', 'Network', 'Containers',
@@ -453,6 +642,46 @@ function initFilters(data) {
   initActorRow('malware-chips',  sortedMalware);
   initActorRow('tool-chips',     sortedTools);
   initActorRow('campaign-chips', sortedCampaigns);
+
+  const mitCount = {};
+  for (const t of data.techniques) {
+    for (const m of (t.mits || [])) {
+      if (!mitCount[m.id]) mitCount[m.id] = { id: m.id, name: m.name, count: 0 };
+      mitCount[m.id].count++;
+    }
+  }
+  const allMits = Object.values(mitCount).sort((a, b) => b.count - a.count);
+  const mitEl   = document.getElementById('mit-chips');
+  if (mitEl) {
+    if (allMits.length) {
+      mitEl.innerHTML = allMits.slice(0, TOP).map(m =>
+        `<span class="hyp-fchip" data-mit="${m.id}" onclick="window.__toggleMit('${m.id}')">${m.name}</span>`
+      ).join('');
+      attachMitDropdown(mitEl, allMits);
+    } else {
+      mitEl.closest('.hyp-filter-row')?.remove();
+    }
+  }
+
+  const compCount = {};
+  for (const t of data.techniques) {
+    for (const ds of t.ds) {
+      const c = ds.split(':')[1]?.trim();
+      if (c) compCount[c] = (compCount[c] || 0) + 1;
+    }
+  }
+  const allComps = Object.entries(compCount).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+  const compEl   = document.getElementById('comp-chips');
+  if (compEl) {
+    if (allComps.length) {
+      compEl.innerHTML = allComps.slice(0, TOP).map(c =>
+        `<span class="hyp-fchip" data-comp="${c.name}" onclick="window.__toggleComponent('${c.name}')">${c.name}</span>`
+      ).join('');
+      attachCompDropdown(compEl, allComps);
+    } else {
+      compEl.closest('.hyp-filter-row')?.remove();
+    }
+  }
 
   const srcFreq = new Map();
   for (const t of data.techniques) {

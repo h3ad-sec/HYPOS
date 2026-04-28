@@ -355,7 +355,7 @@ function renderCard(h) {
       ${malwareChips  ? `<div><div class="hyp-section-lbl">KNOWN MALWARE</div><div class="hyp-actor-chips">${malwareChips}</div></div>`  : ''}
       ${stixToolChips ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${stixToolChips}</div></div>`    : ''}
       ${campaignChips ? `<div><div class="hyp-section-lbl">KNOWN CAMPAIGNS</div><div class="hyp-actor-chips">${campaignChips}</div></div>` : ''}
-      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
+      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.id)}">${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
       ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
     </div>
     ${footer}
@@ -389,9 +389,7 @@ function renderCuratedCard(h, curated) {
       : '';
 
     const mitigationChips = (c.mitigations || []).map(m =>
-      `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.detail)}">
-        <span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}
-      </a>`
+      `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.id)}${m.detail ? ' · ' + escapeAttr(m.detail) : ''}">${escapeHtml(m.name)}</a>`
     ).join('');
 
     const SEV_TIP = {
@@ -472,7 +470,7 @@ function renderCuratedCard(h, curated) {
       ${toolChips          ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${toolChips}</div></div>`                   : ''}
       ${actorChips         ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>`              : ''}
       ${stixCampaignChips  ? `<div><div class="hyp-section-lbl">KNOWN CAMPAIGNS</div><div class="hyp-actor-chips">${stixCampaignChips}</div></div>`         : ''}
-      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener"><span class="hyp-mitigation-id">${escapeHtml(m.id)}</span>${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
+      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.id)}">${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
       ${analyticsHtml      ? `<div>${analyticsHtml}</div>`                                                                                                  : ''}
       ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}
       ${relatedChips ? `<div><div class="hyp-section-lbl">RELATED TECHNIQUES</div><div class="hyp-related-chips">${relatedChips}</div></div>` : ''}
