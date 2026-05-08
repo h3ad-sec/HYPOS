@@ -1,8 +1,12 @@
 export const TACTIC_META = {
+  'reconnaissance':        { label: 'Reconnaissance',        color: '#8b5cf6', goal: 'gather intelligence about the target prior to active intrusion' },
+  'resource-development':  { label: 'Resource Development',  color: '#78716c', goal: 'establish adversary infrastructure or capabilities for conducting operations' },
   'initial-access':        { label: 'Initial Access',        color: '#ff6b35', goal: 'gain an initial foothold in the target environment' },
   'execution':             { label: 'Execution',             color: '#f59e0b', goal: 'execute adversary-controlled code on the target system' },
   'persistence':           { label: 'Persistence',           color: '#a855f7', goal: 'maintain long-term access to the compromised environment' },
   'privilege-escalation':  { label: 'Privilege Escalation',  color: '#ec4899', goal: 'obtain elevated or administrative privileges' },
+  'stealth':               { label: 'Stealth',               color: '#6366f1', goal: 'conceal adversary presence and evade detection by security controls' },
+  'defense-impairment':    { label: 'Defense Impairment',    color: '#9333ea', goal: 'disable or degrade defensive tools and monitoring capabilities' },
   'defense-evasion':       { label: 'Defense Evasion',       color: '#6366f1', goal: 'avoid detection or subvert security controls' },
   'credential-access':     { label: 'Credential Access',     color: '#00ff9f', goal: 'harvest valid authentication material for lateral movement or further access' },
   'discovery':             { label: 'Discovery',             color: '#3b82f6', goal: 'enumerate and map the environment, systems, or network topology' },
@@ -11,8 +15,6 @@ export const TACTIC_META = {
   'command-and-control':   { label: 'Command & Control',     color: '#ff3b5c', goal: 'maintain covert communication with compromised systems' },
   'exfiltration':          { label: 'Exfiltration',          color: '#ffd60a', goal: 'transfer collected data outside the environment' },
   'impact':                { label: 'Impact',                color: '#ef4444', goal: 'disrupt, destroy, encrypt, or manipulate systems or data' },
-  'reconnaissance':        { label: 'Reconnaissance',        color: '#8b5cf6', goal: 'gather intelligence about the target prior to active intrusion' },
-  'resource-development':  { label: 'Resource Development',  color: '#78716c', goal: 'establish adversary infrastructure or capabilities for conducting operations' },
 };
 
 const FALLBACK_TACTIC = { label: 'Unknown', color: '#7d8fb3', goal: 'achieve their objective' };
@@ -24,6 +26,8 @@ const TACTIC_PREMISE = {
   'execution':            'A threat actor with a foothold on {platforms} is suspected of executing adversary-controlled code',
   'persistence':          'A threat actor with initial access on {platforms} is suspected of establishing persistence',
   'privilege-escalation': 'A threat actor with low-privileged access on {platforms} is suspected of escalating privileges',
+  'stealth':              'A threat actor on {platforms} is suspected of concealing adversary activity and evading detection',
+  'defense-impairment':   'A threat actor on {platforms} is suspected of disabling or degrading defensive tools and monitoring capabilities',
   'defense-evasion':      'A threat actor on {platforms} is suspected of evading detection or subverting security controls',
   'credential-access':    'A threat actor with elevated access on {platforms} is suspected of harvesting authentication material',
   'discovery':            'A threat actor with a foothold on {platforms} is suspected of enumerating the internal environment',
@@ -147,9 +151,9 @@ function buildDetection(t) {
 export function groupByTactic(hypotheses) {
   const TACTIC_ORDER = [
     'reconnaissance', 'resource-development', 'initial-access', 'execution',
-    'persistence', 'privilege-escalation', 'defense-evasion', 'credential-access',
-    'discovery', 'lateral-movement', 'collection', 'command-and-control',
-    'exfiltration', 'impact',
+    'persistence', 'privilege-escalation', 'stealth', 'defense-impairment',
+    'credential-access', 'discovery', 'lateral-movement', 'collection',
+    'command-and-control', 'exfiltration', 'impact',
   ];
 
   const map = new Map();

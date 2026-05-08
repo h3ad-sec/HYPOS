@@ -225,7 +225,7 @@ function renderAllResults(result, hypotheses, total) {
     </div>
   </div>`;
 
-  html += `<div class="hyp-matrix-scroll"><div class="hyp-matrix-grid">`;
+  html += `<div class="hyp-matrix-scroll"><div class="hyp-matrix-grid" style="--tactic-count:${groups.length};min-width:${groups.length * 123}px">`;
 
   for (const { tactic, items } of groups) {
     const meta = TACTIC_META[tactic] || { label: tactic, color: '#7d8fb3' };
@@ -273,8 +273,9 @@ function renderSummaryBar(count, label, total) {
 
 function renderActorHeader(actor, techCount, tacticCount) {
   const typeLabel = { group: 'GROUP', malware: 'MALWARE', tool: 'TOOL', campaign: 'CAMPAIGN' }[actor.type] || 'ACTOR';
-  const aliases = actor.aliases.length
-    ? actor.aliases.slice(0, 8).map(a => `<span class="actor-alias">${escapeHtml(a)}</span>`).join('')
+  const aliasChips = actor.aliases.map(a => `<span class="actor-alias">${escapeHtml(a)}</span>`).join('');
+  const aliasesHtml = aliasChips
+    ? `<details class="hyp-meta-dropdown actor-alias-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">ALIASES</span><span class="hyp-meta-count">(${actor.aliases.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="actor-aliases">${aliasChips}</div></details>`
     : '';
 
   return `<div class="hyp-actor-header">
@@ -282,7 +283,7 @@ function renderActorHeader(actor, techCount, tacticCount) {
     <div class="actor-info">
       <div class="actor-name">${escapeHtml(actor.name)}</div>
       <div class="actor-id">${escapeHtml(actor.id)}${actor.url ? ` · <a href="${escapeAttr(actor.url)}" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:none;">ATT&amp;CK ↗</a>` : ''}</div>
-      ${aliases ? `<div class="actor-aliases">${aliases}</div>` : ''}
+      ${aliasesHtml}
       ${actor.desc ? `<div class="actor-desc">${escapeHtml(actor.desc)}</div>` : ''}
     </div>
     <div class="actor-stats">
@@ -332,6 +333,19 @@ function renderCard(h) {
     `<span class="hyp-actor-chip" onclick="window.__hypSearch('${escapeAttr(a.name)}')">${escapeHtml(a.name)}</span>`
   ).join('') + (usedBy.campaigns && usedBy.campaigns.length > CAP ? `<span class="hyp-actor-chip" style="opacity:.55">+${usedBy.campaigns.length - CAP} more</span>` : '');
 
+  const detailsItems = [
+    `<div class="hyp-meta-grid">
+      ${dsComponentChips ? `<div><div class="hyp-section-lbl">DATA COMPONENTS</div><div class="hyp-ds-components">${dsComponentChips}</div></div>` : ''}
+      <div><div class="hyp-section-lbl">PLATFORMS</div><div class="hyp-platform-chips">${platformChips}</div></div>
+    </div>`,
+    usedBy.groups.length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">KNOWN GROUPS</span><span class="hyp-meta-count">(${usedBy.groups.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-actor-chips">${groupChips}</div></details>` : '',
+    usedBy.malware.length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">KNOWN MALWARE</span><span class="hyp-meta-count">(${usedBy.malware.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-actor-chips">${malwareChips}</div></details>` : '',
+    usedBy.tools.length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">KNOWN TOOLS</span><span class="hyp-meta-count">(${usedBy.tools.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-tool-chips">${stixToolChips}</div></details>` : '',
+    (usedBy.campaigns || []).length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">KNOWN CAMPAIGNS</span><span class="hyp-meta-count">(${usedBy.campaigns.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-actor-chips">${campaignChips}</div></details>` : '',
+    h.mits && h.mits.length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></span><span class="hyp-meta-count">(${h.mits.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.id)}">${escapeHtml(m.name)}</a>`).join('')}</div></details>` : '',
+    analyticsHtml ? `<div>${analyticsHtml}</div>` : '',
+  ].filter(Boolean).join('');
+
   return `<div class="hyp-card">
     <div class="hyp-card-head">
       <span class="hyp-card-id">${escapeHtml(h.id)}</span>
@@ -344,19 +358,8 @@ function renderCard(h) {
         <div class="hyp-section-lbl">HYPOTHESIS</div>
         <div class="hyp-hypothesis-text">${escapeHtml(h.hypothesis)}</div>
       </div>
-      <div class="hyp-meta-grid">
-        ${dsComponentChips ? `<div><div class="hyp-section-lbl">DATA COMPONENTS</div><div class="hyp-ds-components">${dsComponentChips}</div></div>` : ''}
-        <div>
-          <div class="hyp-section-lbl">PLATFORMS</div>
-          <div class="hyp-platform-chips">${platformChips}</div>
-        </div>
-      </div>
-      ${groupChips    ? `<div><div class="hyp-section-lbl">KNOWN GROUPS</div><div class="hyp-actor-chips">${groupChips}</div></div>`    : ''}
-      ${malwareChips  ? `<div><div class="hyp-section-lbl">KNOWN MALWARE</div><div class="hyp-actor-chips">${malwareChips}</div></div>`  : ''}
-      ${stixToolChips ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${stixToolChips}</div></div>`    : ''}
-      ${campaignChips ? `<div><div class="hyp-section-lbl">KNOWN CAMPAIGNS</div><div class="hyp-actor-chips">${campaignChips}</div></div>` : ''}
-      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.id)}">${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
-      ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
+      <button class="hyp-details-btn" onclick="var c=this.closest('.hyp-card');c.classList.toggle('details-open');this.textContent=c.classList.contains('details-open')?'▲ Hide Details':'▼ View Details'">▼ View Details</button>
+      <div class="hyp-details-section">${detailsItems}</div>
     </div>
     ${footer}
   </div>`;
@@ -408,7 +411,7 @@ function renderCuratedCard(h, curated) {
       <div class="hyp-chyp-stmt">${escapeHtml(c.statement)}</div>
       ${pivotRows ? `<div class="hyp-section-lbl" style="margin-top:6px">HUNT PIVOTS</div><div class="hyp-pivot-list">${pivotRows}</div>` : ''}
       ${detectionLogicHtml}
-      ${mitigationChips ? `<div class="hyp-section-lbl" style="margin-top:8px">MITIGATIONS</div><div class="hyp-mitigation-chips">${mitigationChips}</div>` : ''}
+      ${mitigationChips ? `<details class="hyp-meta-dropdown" style="margin-top:8px"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">MITIGATIONS</span><span class="hyp-meta-count">(${(c.mitigations || []).length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-mitigation-chips">${mitigationChips}</div></details>` : ''}
       ${c.fpr ? `<div class="hyp-chyp-fpr"><span class="hyp-section-lbl" style="display:inline;margin-right:6px">FPR</span>${escapeHtml(c.fpr)}</div>` : ''}
     </div>`;
   }).join('<hr class="hyp-chyp-divider">');
@@ -460,20 +463,20 @@ function renderCuratedCard(h, curated) {
     </div>
     <div class="hyp-card-body">
       <div class="hyp-curated-hyps">${hypSections}</div>
-      <div class="hyp-meta-grid">
-        ${dsComponentChips ? `<div><div class="hyp-section-lbl">DATA COMPONENTS</div><div class="hyp-ds-components">${dsComponentChips}</div></div>` : ''}
-        <div>
-          <div class="hyp-section-lbl">PLATFORMS</div>
-          <div class="hyp-platform-chips">${platformChips}</div>
+      <button class="hyp-details-btn" onclick="var c=this.closest('.hyp-card');c.classList.toggle('details-open');this.textContent=c.classList.contains('details-open')?'▲ Hide Details':'▼ View Details'">▼ View Details</button>
+      <div class="hyp-details-section">
+        <div class="hyp-meta-grid">
+          ${dsComponentChips ? `<div><div class="hyp-section-lbl">DATA COMPONENTS</div><div class="hyp-ds-components">${dsComponentChips}</div></div>` : ''}
+          <div><div class="hyp-section-lbl">PLATFORMS</div><div class="hyp-platform-chips">${platformChips}</div></div>
         </div>
+        ${allTools.length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">KNOWN TOOLS</span><span class="hyp-meta-count">(${allTools.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-tool-chips">${toolChips}</div></details>` : ''}
+        ${allActors.length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">DOCUMENTED ACTORS</span><span class="hyp-meta-count">(${allActors.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-actor-chips">${actorChips}</div></details>` : ''}
+        ${stixCampaignChips ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">KNOWN CAMPAIGNS</span><span class="hyp-meta-count">(${(usedBy.campaigns || []).length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-actor-chips">${stixCampaignChips}</div></details>` : ''}
+        ${h.mits && h.mits.length ? `<details class="hyp-meta-dropdown"><summary class="hyp-meta-dropdown-sum"><span class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></span><span class="hyp-meta-count">(${h.mits.length})</span><span class="hyp-dropdown-arrow">▾</span></summary><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.id)}">${escapeHtml(m.name)}</a>`).join('')}</div></details>` : ''}
+        ${analyticsHtml ? `<div>${analyticsHtml}</div>` : ''}
+        ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}
+        ${relatedChips ? `<div><div class="hyp-section-lbl">RELATED TECHNIQUES</div><div class="hyp-related-chips">${relatedChips}</div></div>` : ''}
       </div>
-      ${toolChips          ? `<div><div class="hyp-section-lbl">KNOWN TOOLS</div><div class="hyp-tool-chips">${toolChips}</div></div>`                   : ''}
-      ${actorChips         ? `<div><div class="hyp-section-lbl">DOCUMENTED ACTORS</div><div class="hyp-actor-chips">${actorChips}</div></div>`              : ''}
-      ${stixCampaignChips  ? `<div><div class="hyp-section-lbl">KNOWN CAMPAIGNS</div><div class="hyp-actor-chips">${stixCampaignChips}</div></div>`         : ''}
-      ${h.mits && h.mits.length ? `<div><div class="hyp-section-lbl">MITRE MITIGATIONS <span class="hyp-section-src">ATT&amp;CK</span></div><div class="hyp-mitigation-chips">${h.mits.map(m => `<a class="hyp-mitigation-chip" href="https://attack.mitre.org/mitigations/${escapeAttr(m.id)}/" target="_blank" rel="noopener" title="${escapeAttr(m.id)}">${escapeHtml(m.name)}</a>`).join('')}</div></div>` : ''}
-      ${analyticsHtml      ? `<div>${analyticsHtml}</div>`                                                                                                  : ''}
-      ${refItems ? `<div><div class="hyp-section-lbl">REFERENCES</div><div class="hyp-refs">${refItems}</div></div>` : ''}
-      ${relatedChips ? `<div><div class="hyp-section-lbl">RELATED TECHNIQUES</div><div class="hyp-related-chips">${relatedChips}</div></div>` : ''}
     </div>
     ${footer}
   </div>`;

@@ -634,7 +634,6 @@ function initFilters(data) {
     const el = document.getElementById(elId);
     if (!el) return;
     if (!sorted.length) { el.closest('.hyp-filter-row')?.remove(); return; }
-    el.innerHTML = sorted.slice(0, TOP).map(makeActorChip).join('');
     attachDropdown(el, sorted);
   };
 
@@ -654,9 +653,6 @@ function initFilters(data) {
   const mitEl   = document.getElementById('mit-chips');
   if (mitEl) {
     if (allMits.length) {
-      mitEl.innerHTML = allMits.slice(0, TOP).map(m =>
-        `<span class="hyp-fchip" data-mit="${m.id}" onclick="window.__toggleMit('${m.id}')">${m.name}</span>`
-      ).join('');
       attachMitDropdown(mitEl, allMits);
     } else {
       mitEl.closest('.hyp-filter-row')?.remove();
