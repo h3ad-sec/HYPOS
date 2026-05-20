@@ -699,7 +699,6 @@ function initFilters(data) {
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
-  initMatrix();
   initNav();
   initSearch();
   loadHypDB();
@@ -838,11 +837,6 @@ function applyTheme(theme) {
   if (logo) logo.src = theme === 'light'
     ? 'https://raw.githubusercontent.com/h3ad-sec/h3ad-sec.github.io/main/logo-light.png'
     : 'https://raw.githubusercontent.com/h3ad-sec/h3ad-sec.github.io/main/logo-dark.png';
-  const matrix = document.getElementById('matrix');
-  if (matrix) matrix.dataset.theme = theme;
-  if (typeof window.__matrixSetColor === 'function') {
-    window.__matrixSetColor(theme === 'light' ? '#0077ff' : '#00ff9f');
-  }
 }
 
 window.toggleTheme = function () {
@@ -861,39 +855,4 @@ function initNav() {
   };
 }
 
-function initMatrix() {
-  const canvas = document.getElementById('matrix');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
 
-  const CHARS = ['443','80','8443','3389','445','22','53','T1003','T1059','T1047','T1021','T1566','T1071','T1218','T1547','T1486','T1055','T1105','IOC','IOA','YARA','SIGMA','STIX2','TAXII','Enrichment','Correlation','Attribution','ThreatHunt','MD5','SHA1','SHA256','SHA512','Detection','Response','Containment','Triage','Indicator','Feed','Pulse','CVE','CVSS','Exploit','Payload','Analysis','Sandbox','Reputation','Blocklist','Allowlist','Firewall','EDR','XDR','SIEM','SOAR','4624','4625','4688','4672','4768','4769','IAM','AzureAD','OAuth','CloudTrail','BLOCK','INVESTIGATE','ALLOW','MONITOR','HYPOS','MALICIOUS','SUSPICIOUS','BENIGN','UNKNOWN','VT','ABUSEIPDB','OTX','SHODAN','URLHAUS','H3AD-SEC'];
-
-  let cols, drops;
-
-  function resize() {
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-    cols  = Math.floor(canvas.width / 18);
-    drops = Array(cols).fill(1);
-  }
-
-  function draw() {
-    ctx.fillStyle = document.body.classList.contains('light')
-      ? 'rgba(245,247,251,0.08)'
-      : 'rgba(0,0,0,0.12)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = document.body.classList.contains('light') ? '#0077ff' : '#00ff9f';
-    ctx.font = '12px monospace';
-    for (let i = 0; i < drops.length; i++) {
-      const c = CHARS[Math.floor(Math.random() * CHARS.length)];
-      ctx.fillText(c, i * 18, drops[i] * 18);
-      if (drops[i] * 18 > canvas.height && Math.random() > 0.975) drops[i] = 0;
-      drops[i]++;
-    }
-  }
-
-  window.__matrixSetColor = c => {};
-  resize();
-  window.addEventListener('resize', resize);
-  setInterval(draw, 45);
-}
