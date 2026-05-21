@@ -237,6 +237,8 @@ body.light .toggle-thumb { transform: translateX(16px); background: #fff; }
   z-index: 99;
   flex-direction: column;
   padding: 8px 0;
+  max-height: calc(100vh - var(--nav-h));
+  overflow-y: auto;
 }
 .nav-drawer.open { display: flex; }
 .nav-drawer a {
