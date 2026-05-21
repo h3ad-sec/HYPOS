@@ -1810,6 +1810,9 @@ body.hero-hidden .hyp-main{padding-top:calc(var(--nav-h) + 20px);}
   .actor-stats { display: none; }
   .hyp-actor-header { flex-direction: column; gap: 10px; }
   .hyp-summary { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .hyp-search-wrap, .hyp-results, .hyp-loading, .hyp-empty, .hyp-error { padding: 0 16px; }
+  .hyp-matrix-wrap { padding: 0 16px; }
+  .hyp-summary-right { flex-wrap: wrap; gap: 5px; }
 }
 
 @media (max-width: 480px) {
@@ -1818,4 +1821,24 @@ body.hero-hidden .hyp-main{padding-top:calc(var(--nav-h) + 20px);}
   .hyp-search-wrap, .hyp-results, .hyp-loading, .hyp-empty, .hyp-error { padding: 0 12px; }
   .hero-title { font-size: 16px; }
   .data-status { display: none; }
+  .hyp-matrix-wrap { padding: 0 10px; }
+  .hyp-filter-bar { padding: 8px 10px; gap: 5px 8px; }
+  .hyp-filter-row-actions { flex-wrap: wrap; gap: 5px; margin-left: 0; width: 100%; }
+  .hyp-search-box { flex-wrap: wrap; }
+  .hyp-search-input { min-width: 0; font-size: 14px; }
+  .hyp-search-btn { border-radius: 0 0 7px 7px; width: 100%; padding: 10px 0; }
+  .hyp-detect-query { word-break: break-all; overflow-x: auto; }
+  .hyp-card-head { padding: 10px 12px; }
+  .hyp-card-body { padding: 12px; }
+}
+
+@media (max-width: 360px) {
+  .hyp-search-wrap, .hyp-results, .hyp-loading, .hyp-empty, .hyp-error, .hyp-matrix-wrap { padding: 0 8px; }
+  .hyp-matrix-grid { grid-template-columns: repeat(var(--tactic-count, 14), minmax(100px, 1fr)); }
+  .hyp-tactic-cards { grid-template-columns: 1fr; }
+  .hyp-main { padding-left: 0; padding-right: 0; }
+  .actor-icon { display: none; }
+  .hyp-card-head { gap: 6px; }
+  .hyp-card-id { font-size: 10px; }
+  .hyp-card-name { font-size: 11px; }
 }
