@@ -48,5 +48,5 @@ HYPOS is a sub-tool under [H3AD-HUNT](https://h3ad-sec.github.io/H3AD-HUNT/), th
 | [H3AD-HUNT](https://h3ad-sec.github.io/H3AD-HUNT/) | HYPOS, PIVEX, TRACEPULSE |
 | [H3AD-OPS](https://h3ad-sec.github.io/H3AD-OPS/) | QUICKTRACE, SHIFTLOG, PHISHOPS |
 | [H3AD-DF](https://h3ad-sec.github.io/H3AD-DF/) | REGSCOPE, MALBRIEF-AI |
-| [H3AD-IR](https://h3ad-sec.github.io/H3AD-IR/) | PHISHBOOK |
+| [H3AD-IR](https://h3ad-sec.github.io/H3AD-IR/) | Coming soon |
 | [H3AD-LEARN](https://h3ad-sec.github.io/H3AD-LEARN/) | Threat Hunting (9 ch), LOLBAS (8 ch) |
