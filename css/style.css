@@ -1867,3 +1867,7 @@ body.nav-compact .hamburger { display: flex; }
 .footer-credit-pill .credit-by { color:var(--muted); }
 .footer-credit-pill .credit-name { color:var(--accent); font-weight:700; letter-spacing:.5px; }
 .footer-copyright { color:var(--muted); font-family:'Exo 2',sans-serif; font-size:0.65rem; }
+
+/* H3AD-SEC MENU SYNC: hamburger-only nav */
+.nav-links{display:none!important;}
+.hamburger{display:flex!important;}
