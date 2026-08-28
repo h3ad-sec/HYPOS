@@ -1856,17 +1856,20 @@ body.nav-compact .hamburger { display: flex; }
 
 /* ── Footer ── */
 .site-footer { border-top:1px solid var(--border); margin-top:32px; padding:8px 28px; }
-.footer-inner { max-width:1700px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:12px; font-family:'Exo 2',sans-serif; font-size:0.65rem; color:var(--muted); flex-wrap:wrap; }
-.footer-brand { color:var(--accent); text-decoration:none; }
-.footer-project { color:var(--accent2, var(--accent)); }
-.footer-sep { color:var(--border); }
-.footer-credit-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+.footer-top { max-width:1700px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:0.5rem 1.5rem; font-family:'Exo 2',sans-serif; font-size:0.65rem; color:var(--muted); flex-wrap:wrap; }
+.footer-left { color:var(--muted); }
+.footer-right { color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; opacity:0.85; }
+.footer-credit-row { display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; }
 .footer-credit-pill { display:inline-flex; flex-wrap:nowrap; align-items:center; gap:6px; padding:4px 12px; border:1px solid var(--border); border-radius:999px; text-decoration:none; font-family:'Exo 2',sans-serif; font-weight:500; font-size:0.65rem; white-space:nowrap; transition:border-color .15s; }
 .footer-credit-pill:hover { border-color:var(--accent); }
 .footer-credit-pill .credit-tool { font-weight:700; letter-spacing:2px; }
 .footer-credit-pill .credit-by { color:var(--muted); }
 .footer-credit-pill .credit-name { color:var(--accent); font-weight:700; letter-spacing:.5px; }
-.footer-copyright { color:var(--muted); font-family:'Exo 2',sans-serif; font-size:0.65rem; }
+
+@media(max-width:860px){
+  .footer-top{flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:0.6rem;}
+  .footer-credit-row{justify-content:center;}
+}
 
 /* H3AD-SEC MENU SYNC: hamburger-only nav */
 .nav-links{display:none!important;}
