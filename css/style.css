@@ -254,7 +254,7 @@ body.light .toggle-thumb { transform: translateX(16px); background: #fff; }
 .nav-drawer.open { display: flex; }
 .nav-drawer a {
   padding: 10px 20px;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: var(--ui);
   font-size: var(--fs-sm);
   color: var(--muted);
   text-decoration: none;
